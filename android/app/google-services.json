@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "418152706925",
+    "project_id": "oyunlab-sistem",
+    "storage_bucket": "oyunlab-sistem.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:418152706925:android:0877af6aa869cfa1e22064",
+        "android_client_info": {
+          "package_name": "com.example.oyunlab"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCbWPxWSacRIXn5MKLuCdk7N6mhj-hTp9w"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
