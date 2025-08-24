@@ -30,7 +30,7 @@ class AppTheme {
   );
 
   // Kart stilleri
-  static final CardTheme cardTheme = CardTheme(
+  static final CardThemeData cardTheme = CardThemeData(
     color: cardColor,
     elevation: 4,
     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),

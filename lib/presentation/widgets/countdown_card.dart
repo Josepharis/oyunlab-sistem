@@ -2,19 +2,16 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../data/models/customer_model.dart';
-import '../../core/constants/app_constants.dart';
 import '../../core/theme/app_theme.dart';
 
 class CountdownCard extends StatefulWidget {
   final Customer customer;
   final VoidCallback? onTap;
-  final int siblingCount; // Kardeş sayısı
 
   const CountdownCard({
     super.key,
     required this.customer,
     this.onTap,
-    this.siblingCount = 1,
   });
 
   @override
@@ -58,6 +55,11 @@ class _CountdownCardState extends State<CountdownCard>
   }
 
   Color _getStatusColor() {
+    // Eğer çocuk tamamlanmışsa gri renk kullan
+    if (widget.customer.isCompleted) {
+      return Colors.grey.shade600;
+    }
+    
     final progress = _remainingTime.inMinutes / widget.customer.durationMinutes;
 
     if (progress > 0.5) {
@@ -90,339 +92,348 @@ class _CountdownCardState extends State<CountdownCard>
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final statusColor = _getStatusColor();
     final timeStr = _formatTime(_remainingTime);
-    final progress =
-        _remainingTime.inSeconds / (widget.customer.durationMinutes * 60);
 
     return FadeTransition(
       opacity: _animation,
       child: Padding(
         padding: const EdgeInsets.only(bottom: 10.0),
-        child: GestureDetector(
-          onTap: widget.onTap,
-          child: Container(
-            height: 90,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: [
-                BoxShadow(
-                  color: statusColor.withOpacity(0.2),
-                  offset: const Offset(0, 2),
-                  blurRadius: 6.0,
-                ),
-              ],
-              border: Border.all(
-                color: statusColor.withOpacity(0.3),
-                width: 1.5,
-              ),
-            ),
-            child: Row(
-              children: [
-                // Progress bar (sol kenar)
-                Container(
-                  width: 5,
-                  decoration: BoxDecoration(
-                    color: statusColor,
-                    borderRadius: BorderRadius.only(
-                      topLeft: Radius.circular(16),
-                      bottomLeft: Radius.circular(16),
+        child: Column(
+          children: [
+            // Ana kart
+            GestureDetector(
+              onTap: widget.onTap,
+              child: Container(
+                height: 90,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(
+                      color: statusColor.withOpacity(0.2),
+                      offset: const Offset(0, 2),
+                      blurRadius: 6.0,
                     ),
+                  ],
+                  border: Border.all(
+                    color: statusColor.withOpacity(0.3),
+                    width: 1.5,
                   ),
                 ),
-
-                // Avatar ve isim
-                Expanded(
-                  flex: 3,
-                  child: Padding(
-                    padding: const EdgeInsets.all(12.0),
-                    child: Row(
-                      children: [
-                        // Avatar
-                        Stack(
-                          children: [
-                            Hero(
-                              tag: 'avatar-${widget.customer.id}',
-                              child: Container(
-                                width: 45,
-                                height: 45,
-                                decoration: BoxDecoration(
-                                  gradient: LinearGradient(
-                                    colors: [
-                                      statusColor.withOpacity(0.9),
-                                      statusColor.withOpacity(0.7),
-                                    ],
-                                    begin: Alignment.topLeft,
-                                    end: Alignment.bottomRight,
-                                  ),
-                                  shape: BoxShape.circle,
-                                ),
-                                child: Center(
-                                  child: Text(
-                                    widget.customer.childName
-                                        .substring(0, 1)
-                                        .toUpperCase(),
-                                    style: const TextStyle(
-                                      fontSize: 22,
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.white,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-
-                            // Duraklatma göstergesi
-                            if (widget.customer.isPaused)
-                              Positioned(
-                                right: 0,
-                                bottom: 0,
-                                child: Container(
-                                  padding: EdgeInsets.all(2),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white,
-                                    shape: BoxShape.circle,
-                                    border: Border.all(
-                                      color: Colors.white,
-                                      width: 2,
-                                    ),
-                                  ),
-                                  child: Icon(
-                                    Icons.pause_rounded,
-                                    color: Colors.blue.shade600,
-                                    size: 14,
-                                  ),
-                                ),
-                              ),
-                          ],
+                child: Row(
+                  children: [
+                    // Progress bar (sol kenar)
+                    Container(
+                      width: 5,
+                      decoration: BoxDecoration(
+                        color: statusColor,
+                        borderRadius: BorderRadius.only(
+                          topLeft: Radius.circular(16),
+                          bottomLeft: Radius.circular(16),
                         ),
-                        SizedBox(width: 10),
+                      ),
+                    ),
 
-                        // İsim ve bilgiler
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: Text(
-                                      widget.customer.childName,
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 15,
-                                      ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                  Container(
-                                    padding: EdgeInsets.symmetric(
-                                      horizontal: 4,
-                                      vertical: 2,
-                                    ),
+                    // Avatar ve isim
+                    Expanded(
+                      flex: 3,
+                      child: Padding(
+                        padding: const EdgeInsets.all(12.0),
+                        child: Row(
+                          children: [
+                            // Avatar
+                            Stack(
+                              children: [
+                                Hero(
+                                  tag: 'avatar-${widget.customer.id}',
+                                  child: Container(
+                                    width: 45,
+                                    height: 45,
                                     decoration: BoxDecoration(
-                                      color: Colors.grey.shade100,
-                                      borderRadius: BorderRadius.circular(4),
+                                      gradient: LinearGradient(
+                                        colors: [
+                                          statusColor.withOpacity(0.9),
+                                          statusColor.withOpacity(0.7),
+                                        ],
+                                        begin: Alignment.topLeft,
+                                        end: Alignment.bottomRight,
+                                      ),
+                                      shape: BoxShape.circle,
                                     ),
-                                    child: Text(
-                                      '#${widget.customer.ticketNumber}',
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        color: Colors.grey.shade700,
-                                        fontWeight: FontWeight.w500,
+                                    child: Center(
+                                      child: widget.customer.isCompleted
+                                          ? Icon(
+                                              Icons.check_circle,
+                                              color: Colors.white,
+                                              size: 24,
+                                            )
+                                          : Text(
+                                              widget.customer.childName
+                                                  .substring(0, 1)
+                                                  .toUpperCase(),
+                                              style: const TextStyle(
+                                                fontSize: 22,
+                                                fontWeight: FontWeight.bold,
+                                                color: Colors.white,
+                                              ),
+                                            ),
+                                    ),
+                                  ),
+                                ),
+
+                                // Duraklatma göstergesi
+                                if (widget.customer.isPaused && !widget.customer.isCompleted)
+                                  Positioned(
+                                    right: 0,
+                                    bottom: 0,
+                                    child: Container(
+                                      padding: EdgeInsets.all(2),
+                                      decoration: BoxDecoration(
+                                        color: Colors.white,
+                                        shape: BoxShape.circle,
+                                        border: Border.all(
+                                          color: Colors.white,
+                                          width: 2,
+                                        ),
+                                      ),
+                                      child: Icon(
+                                        Icons.pause_rounded,
+                                        color: Colors.blue.shade600,
+                                        size: 14,
                                       ),
                                     ),
                                   ),
-                                ],
-                              ),
-                              SizedBox(height: 4),
-                              Text(
-                                widget.customer.parentName,
-                                style: TextStyle(
-                                  color: Colors.grey.shade700,
-                                  fontSize: 12,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                              SizedBox(height: 2),
-                              Row(
+                              ],
+                            ),
+                            SizedBox(width: 10),
+
+                            // İsim ve bilgiler
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
                                   Row(
-                                    mainAxisSize: MainAxisSize.min,
                                     children: [
-                                      Icon(
-                                        Icons.phone_outlined,
-                                        size: 12,
-                                        color: Colors.grey.shade600,
+                                      Expanded(
+                                        child: Text(
+                                          widget.customer.childName,
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 15,
+                                            decoration: widget.customer.isCompleted 
+                                                ? TextDecoration.lineThrough 
+                                                : null,
+                                            color: widget.customer.isCompleted 
+                                                ? Colors.grey.shade600 
+                                                : null,
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
                                       ),
-                                      SizedBox(width: 2),
-                                      Text(
-                                        widget.customer.phoneNumber,
-                                        style: TextStyle(
-                                          color: Colors.grey.shade600,
-                                          fontSize: 11,
+                                      Container(
+                                        padding: EdgeInsets.symmetric(
+                                          horizontal: 4,
+                                          vertical: 2,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: widget.customer.isCompleted 
+                                              ? Colors.grey.shade200 
+                                              : Colors.grey.shade100,
+                                          borderRadius: BorderRadius.circular(4),
+                                        ),
+                                        child: Text(
+                                          '#${widget.customer.ticketNumber}',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            color: widget.customer.isCompleted 
+                                                ? Colors.grey.shade500 
+                                                : Colors.grey.shade700,
+                                            fontWeight: FontWeight.w500,
+                                          ),
                                         ),
                                       ),
                                     ],
                                   ),
+                                  SizedBox(height: 4),
+                                  Text(
+                                    widget.customer.parentName,
+                                    style: TextStyle(
+                                      color: widget.customer.isCompleted 
+                                          ? Colors.grey.shade500 
+                                          : Colors.grey.shade700,
+                                      fontSize: 12,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  SizedBox(height: 2),
+                                  Row(
+                                    children: [
+                                      Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(
+                                            Icons.phone_outlined,
+                                            size: 12,
+                                            color: widget.customer.isCompleted 
+                                                ? Colors.grey.shade400 
+                                                : Colors.grey.shade600,
+                                          ),
+                                          SizedBox(width: 2),
+                                          Text(
+                                            widget.customer.phoneNumber,
+                                            style: TextStyle(
+                                              color: widget.customer.isCompleted 
+                                                  ? Colors.grey.shade400 
+                                                  : Colors.grey.shade600,
+                                              fontSize: 11,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
                                 ],
                               ),
-                            ],
-                          ),
+                            ),
+                          ],
                         ),
+                      ),
+                    ),
+
+                    // Giriş/Çıkış bilgileri (orta kısım)
+                    Container(width: 1, height: 50, color: Colors.grey.shade200),
+                    SizedBox(width: 8),
+
+                    Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _buildTimeInfoRow(
+                          Icons.login_outlined,
+                          _formatDateTime(widget.customer.entryTime),
+                          Colors.blue.shade700,
+                        ),
+                        SizedBox(height: 6),
+                        if (widget.customer.isCompleted && widget.customer.completedTime != null)
+                          _buildTimeInfoRow(
+                            Icons.check_circle_outline,
+                            _formatDateTime(widget.customer.completedTime!),
+                            Colors.green.shade700,
+                          )
+                        else
+                          _buildTimeInfoRow(
+                            Icons.logout_outlined,
+                            _formatDateTime(widget.customer.exitTime),
+                            Colors.green.shade700,
+                          ),
                       ],
                     ),
-                  ),
-                ),
+                    SizedBox(width: 8),
 
-                // Giriş/Çıkış bilgileri (orta kısım)
-                Container(width: 1, height: 50, color: Colors.grey.shade200),
-                SizedBox(width: 8),
+                    // Geri sayım (en sağ)
+                    Container(width: 1, height: 50, color: Colors.grey.shade200),
+                    Expanded(
+                      flex: 2,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              statusColor.withOpacity(0.15),
+                              statusColor.withOpacity(0.05),
+                            ],
+                            begin: Alignment.centerLeft,
+                            end: Alignment.centerRight,
+                          ),
+                          borderRadius: BorderRadius.only(
+                            topRight: Radius.circular(16),
+                            bottomRight: Radius.circular(16),
+                          ),
+                        ),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            // Süre gösterimi
+                            if (widget.customer.isCompleted)
+                              Column(
+                                children: [
+                                  Icon(
+                                    Icons.check_circle,
+                                    color: Colors.green.shade600,
+                                    size: 20,
+                                  ),
+                                  SizedBox(height: 4),
+                                  Text(
+                                    'TAMAMLANDI',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.green.shade600,
+                                    ),
+                                  ),
+                                ],
+                              )
+                            else if (widget.customer.isPaused)
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(
+                                    Icons.pause_circle_filled,
+                                    color: Colors.blue.shade600,
+                                    size: 16,
+                                  ),
+                                  SizedBox(width: 4),
+                                  Text(
+                                    'DURAKLATILDI',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.blue.shade600,
+                                    ),
+                                  ),
+                                ],
+                              )
+                            else
+                              Text(
+                                timeStr,
+                                style: TextStyle(
+                                  fontSize: 26,
+                                  fontWeight: FontWeight.bold,
+                                  color: statusColor,
+                                ),
+                              ),
 
-                Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildTimeInfoRow(
-                      Icons.login_outlined,
-                      _formatDateTime(widget.customer.entryTime),
-                      Colors.blue.shade700,
-                    ),
-                    SizedBox(height: 6),
-                    _buildTimeInfoRow(
-                      Icons.logout_outlined,
-                      _formatDateTime(widget.customer.exitTime),
-                      Colors.green.shade700,
+                            // Kalan ve kişi sayısı yan yana
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                if (!widget.customer.isCompleted) ...[
+                                  Text(
+                                    widget.customer.isPaused ? timeStr : 'kalan',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: widget.customer.isPaused
+                                          ? Colors.blue.shade600
+                                          : statusColor.withOpacity(0.8),
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
                   ],
                 ),
-                SizedBox(width: 8),
-
-                // Geri sayım (en sağ)
-                Container(width: 1, height: 50, color: Colors.grey.shade200),
-                Expanded(
-                  flex: 2,
-                  child: Container(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          statusColor.withOpacity(0.15),
-                          statusColor.withOpacity(0.05),
-                        ],
-                        begin: Alignment.centerLeft,
-                        end: Alignment.centerRight,
-                      ),
-                      borderRadius: BorderRadius.only(
-                        topRight: Radius.circular(16),
-                        bottomRight: Radius.circular(16),
-                      ),
-                    ),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        // Süre gösterimi - Stack'i kaldırıyorum
-                        widget.customer.isPaused
-                            ? Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(
-                                  Icons.pause_circle_filled,
-                                  color: Colors.blue.shade600,
-                                  size: 16,
-                                ),
-                                SizedBox(width: 4),
-                                Text(
-                                  'DURAKLATILDI',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.blue.shade600,
-                                  ),
-                                ),
-                              ],
-                            )
-                            : Text(
-                              timeStr,
-                              style: TextStyle(
-                                fontSize: 26,
-                                fontWeight: FontWeight.bold,
-                                color: statusColor,
-                              ),
-                            ),
-
-                        // Kalan ve kişi sayısı yan yana
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text(
-                              widget.customer.isPaused ? timeStr : 'kalan',
-                              style: TextStyle(
-                                fontSize: 11,
-                                color:
-                                    widget.customer.isPaused
-                                        ? Colors.blue.shade600
-                                        : statusColor.withOpacity(0.8),
-                              ),
-                            ),
-
-                            // Kişi sayısı yan tarafa - çok daha büyük ve belirgin
-                            if (widget.siblingCount > 1) ...[
-                              SizedBox(width: 10),
-                              Container(
-                                padding: EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 3,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: statusColor,
-                                  borderRadius: BorderRadius.circular(6),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: Colors.black.withOpacity(0.2),
-                                      blurRadius: 2,
-                                      offset: Offset(0, 1),
-                                    ),
-                                  ],
-                                  border: Border.all(
-                                    color: Colors.white,
-                                    width: 1,
-                                  ),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                      Icons.people,
-                                      color: Colors.white,
-                                      size: 12,
-                                    ),
-                                    SizedBox(width: 3),
-                                    Text(
-                                      "${widget.siblingCount} kişi",
-                                      style: TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
+              ),
             ),
-          ),
+            
+            // Kardeş detayları kaldırıldı - her giriş için yeni bilet numarası
+          ],
         ),
       ),
     );

@@ -48,26 +48,13 @@ class _TableOrderScreenState extends State<TableOrderScreen>
     // Firebase'den masa verileri yükle
     _loadTablesFromFirebase();
 
-    // Aktif müşterilerden masa siparişleri oluştur/güncelle
-    _initializeTablesFromCustomers();
-
     // Masa değişikliklerini dinle
     _tableOrderRepository.tablesStream.listen((tables) {
       if (mounted) {
         setState(() {
-          // Firebase'den gelen masaları önce geçici bir listede topla
-          final List<TableOrder> firebaseTables = tables;
-
-          // Mevcut masalardaki siparişleri koruyarak birleştir
-          _mergeTables(firebaseTables);
+          // Firebase'den gelen masaları doğrudan kullan
+          _tableOrders = tables;
         });
-      }
-    });
-
-    // Müşteri değişikliklerini dinle
-    widget.customerRepository.customersStream.listen((customers) {
-      if (mounted) {
-        _updateTablesFromCustomers(customers);
       }
     });
   }
@@ -78,8 +65,8 @@ class _TableOrderScreenState extends State<TableOrderScreen>
       final tables = await _tableOrderRepository.getAllTables();
       if (mounted) {
         setState(() {
-          // Mevcut masalardaki siparişleri koruyarak birleştir
-          _mergeTables(tables);
+          // Firebase'den gelen masaları doğrudan kullan
+          _tableOrders = tables;
         });
       }
     } catch (e) {
@@ -87,33 +74,7 @@ class _TableOrderScreenState extends State<TableOrderScreen>
     }
   }
 
-  // Gelen masaları mevcut masalarla birleştir
-  void _mergeTables(List<TableOrder> newTables) {
-    // Mevcut masaların siparişlerini bir map'e kaydet
-    final Map<int, List<Order>> existingOrders = {};
-    for (var table in _tableOrders) {
-      if (table.orders.isNotEmpty) {
-        existingOrders[table.tableNumber] = table.orders;
-      }
-    }
 
-    // Yeni masalara mevcut siparişleri ekle
-    final updatedTables = newTables.map((table) {
-      if (existingOrders.containsKey(table.tableNumber)) {
-        // Siparişleri birleştir - Firebase'de olan siparişleri koru
-        if (table.orders.isEmpty) {
-          // Firebase'de sipariş yoksa mevcut siparişleri kullan
-          return table.copyWith(orders: existingOrders[table.tableNumber]);
-        }
-      }
-      return table;
-    }).toList();
-
-    // Sırala
-    updatedTables.sort((a, b) => a.tableNumber.compareTo(b.tableNumber));
-
-    _tableOrders = updatedTables;
-  }
 
   @override
   void dispose() {
@@ -170,130 +131,16 @@ class _TableOrderScreenState extends State<TableOrderScreen>
     }
   }
 
-  // Aktif müşterilerden masa oluştur
+  // Aktif müşterilerden masa oluştur - ARTIK KULLANILMIYOR
   void _initializeTablesFromCustomers() {
-    final customers = widget.customerRepository.customers;
-    _updateTablesFromCustomers(customers);
+    // Otomatik masa oluşturma kaldırıldı
+    // Artık sadece manuel olarak masa eklenebilir
   }
 
-  // Müşterilerden masaları güncelle
+  // Müşterilerden masaları güncelle - ARTIK KULLANILMIYOR
   void _updateTablesFromCustomers(List<Customer> customers) {
-    // Bilet numaralarına göre grupla
-    final Map<int, List<Customer>> ticketGroups = {};
-
-    for (var customer in customers) {
-      if (customer.remainingTime.inSeconds > 0) {
-        // Sadece aktif müşterileri al
-        if (!ticketGroups.containsKey(customer.ticketNumber)) {
-          ticketGroups[customer.ticketNumber] = [];
-        }
-        ticketGroups[customer.ticketNumber]!.add(customer);
-      }
-    }
-
-    // Mevcut masalardaki siparişleri koru
-    final Map<int, List<Order>> existingOrders = {};
-    for (var table in _tableOrders) {
-      if (table.orders.isNotEmpty) {
-        existingOrders[table.tableNumber] = table.orders;
-      }
-    }
-
-    // Manuel masaları koru - MANUEL MASALARI KORUMAK ÖNEMLİ
-    final List<TableOrder> manualTables =
-        _tableOrders.where((table) => table.isManual).toList();
-
-    // Otomatik masaları da koru - BU DEĞİŞİKLİK İLE ARTIK TÜM MASALAR KORUNACAK
-    final List<TableOrder> autoTables =
-        _tableOrders.where((table) => !table.isManual).toList();
-
-    // Bir bilet numarasına ait tüm müşteriler kaldırılmışsa, onun masasını otomatik olarak silmek için
-    // hangi masaların güncellenmesi gerektiğini belirle
-    final List<int> ticketsToUpdate = ticketGroups.keys.toList();
-    final List<int> existingTickets = autoTables
-        .where((table) => !table.isManual)
-        .map((table) => table.ticketNumber)
-        .toList();
-
-    // Yeni masa listesi oluştur
-    final List<TableOrder> newTables = [];
-
-    // Manuel masaları ekle
-    for (var manualTable in manualTables) {
-      // Siparişleri koruyarak ekle
-      newTables.add(
-        manualTable.copyWith(
-          orders: existingOrders[manualTable.tableNumber] ?? manualTable.orders,
-        ),
-      );
-    }
-
-    // Aktif müşterileri takip etmek için bir Map (bilet numarası -> masa)
-    final Map<int, TableOrder> activeTablesByTicket = {};
-
-    // Mevcut otomatik masaları güncelle
-    for (var autoTable in autoTables) {
-      // Otomatik masaların durumunu kontrol et
-      if (ticketGroups.containsKey(autoTable.ticketNumber)) {
-        // Bilet hala aktif, güncelle
-        final ticketCustomers = ticketGroups[autoTable.ticketNumber]!;
-
-        // Çocuk sayısını güncelle ve siparişleri koru
-        final updatedTable = autoTable.copyWith(
-          childCount: ticketCustomers.length,
-          orders: existingOrders[autoTable.tableNumber] ?? autoTable.orders,
-        );
-
-        newTables.add(updatedTable);
-
-        // Aktif masalar map'ine ekle
-        activeTablesByTicket[autoTable.ticketNumber] = updatedTable;
-
-        // Firebase'de güncelle
-        _tableOrderRepository.updateTable(updatedTable);
-      } else {
-        // Bilet artık aktif değil, ama masayı silmiyoruz
-        // Sadece Firebase'de güncelleme yapıyoruz
-        // Bu müşteriler kaldırılmış olsa bile masa varlığını koruyor
-
-        newTables.add(autoTable); // Masayı ekle
-
-        // Diğer işlemlere devam et (burada masa otomatik silinmeyecek)
-      }
-    }
-
-    // Yeni müşterilerden elde edilen yeni masaları ekle
-    for (var ticketNumber in ticketGroups.keys) {
-      // Bu bilet numarası için zaten bir masa var mı kontrol et
-      // ÖNEMLİ: Aktif masalar map'inde bu bilet numarası var mı kontrol ediyoruz
-      if (!activeTablesByTicket.containsKey(ticketNumber)) {
-        final ticketCustomers = ticketGroups[ticketNumber]!;
-
-        final newTable = TableOrder(
-          tableNumber:
-              ticketNumber, // Bilet numarası masa numarası olarak kullan
-          customerName: ticketCustomers.first.parentName,
-          ticketNumber: ticketNumber,
-          childCount: ticketCustomers.length,
-          isManual: false,
-        );
-
-        newTables.add(newTable);
-
-        // Aktif masalar map'ine ekle
-        activeTablesByTicket[ticketNumber] = newTable;
-
-        // Firebase'e ekle
-        _tableOrderRepository.addTable(newTable);
-      }
-    }
-
-    // Masa numaralarını sırala
-    newTables.sort((a, b) => a.tableNumber.compareTo(b.tableNumber));
-
-    setState(() {
-      _tableOrders = newTables;
-    });
+    // Otomatik masa güncelleme kaldırıldı
+    // Artık sadece manuel masalar korunuyor
   }
 
   // Sonraki masa numarasını al (manuel masalar için)
@@ -387,47 +234,13 @@ class _TableOrderScreenState extends State<TableOrderScreen>
 
   // Masa silme
   void _deleteTable(TableOrder table) {
-    showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: const Text('Masa Sil'),
-          content: Text(
-              '${table.tableNumber} numaralı masayı silmek istediğinize emin misiniz?'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('İptal'),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red,
-              ),
-              onPressed: () {
-                // Firebase'den de sil
-                _tableOrderRepository.deleteTable(table.tableNumber);
+    // Firebase'den sil
+    _tableOrderRepository.deleteTable(table.tableNumber);
 
-                // UI'dan kaldır
-                setState(() {
-                  _tableOrders.remove(table);
-                });
-
-                Navigator.pop(context);
-
-                // Bildirim göster
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('${table.tableNumber} numaralı masa silindi'),
-                    backgroundColor: Colors.green,
-                  ),
-                );
-              },
-              child: const Text('Sil', style: TextStyle(color: Colors.white)),
-            ),
-          ],
-        );
-      },
-    );
+    // UI'dan kaldır
+    setState(() {
+      _tableOrders.remove(table);
+    });
   }
 
   // Sipariş ekleme
@@ -2075,16 +1888,6 @@ class _TableDetailScreenState extends State<TableDetailScreen> {
 
                             // Masayı sil
                             widget.onDeleteTable(widget.table);
-
-                            // Bildirim göster
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                    'Ödeme alındı (${paymentMethod == 'nakit' ? 'Nakit' : 'Kart'}) ve masa silindi'),
-                                backgroundColor: Colors.green,
-                                behavior: SnackBarBehavior.floating,
-                              ),
-                            );
                           },
                           style: ElevatedButton.styleFrom(
                             backgroundColor: Colors.green.shade600,
@@ -2303,15 +2106,6 @@ class _TableDetailScreenState extends State<TableDetailScreen> {
 
                           // Masayı sil
                           widget.onDeleteTable(widget.table);
-
-                          // Bildirim göster
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: const Text('Masa silindi'),
-                              backgroundColor: Colors.green,
-                              behavior: SnackBarBehavior.floating,
-                            ),
-                          );
                         },
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.red.shade600,

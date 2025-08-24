@@ -105,26 +105,45 @@ class FirebaseService {
 
       print('FIREBASE_SERVICE: Son bilet numarası getiriliyor...');
 
-      // settings/counters dökümanını getir veya oluştur
-      final docRef = _settingsCollection.doc('counters');
+      // Bugünün tarihini al
+      final today = DateTime.now();
+      final todayKey = '${today.year}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')}';
+
+      // settings/daily_tickets dökümanını getir veya oluştur
+      final docRef = _settingsCollection.doc('daily_tickets');
       final doc = await docRef.get();
 
       if (!doc.exists) {
         // Döküman yoksa oluştur
         print(
-          'FIREBASE_SERVICE: Bilet numarası dökumanı bulunamadı, oluşturuluyor...',
+          'FIREBASE_SERVICE: Günlük bilet dökumanı bulunamadı, oluşturuluyor...',
         );
         await docRef.set({
+          'currentDate': todayKey,
           'lastTicketNumber': 100,
           'updatedAt': FieldValue.serverTimestamp(),
         });
         return 100;
       }
 
-      // Döküman varsa son bilet numarasını al
+      // Döküman varsa kontrol et
       final data = doc.data()!;
+      final currentDate = data['currentDate'] as String? ?? '';
+      
+      // Eğer farklı günse, sayacı sıfırla
+      if (currentDate != todayKey) {
+        print('FIREBASE_SERVICE: Yeni gün, bilet numarası 100\'den başlatılıyor');
+        await docRef.update({
+          'currentDate': todayKey,
+          'lastTicketNumber': 100,
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+        return 100;
+      }
+
+      // Aynı günse son bilet numarasını al
       final lastTicketNumber = data['lastTicketNumber'] as int? ?? 100;
-      print('FIREBASE_SERVICE: Son bilet numarası: $lastTicketNumber');
+      print('FIREBASE_SERVICE: Bugünkü son bilet numarası: $lastTicketNumber');
       return lastTicketNumber;
     } catch (e) {
       print('FIREBASE_SERVICE: Son bilet numarası alınırken hata: $e');
@@ -153,8 +172,12 @@ class FirebaseService {
 
       print('FIREBASE_SERVICE: Bilet numarası arttırılıyor...');
 
+      // Bugünün tarihini al
+      final today = DateTime.now();
+      final todayKey = '${today.year}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')}';
+
       // Transaction ile atomik arttırma işlemi yap
-      final docRef = _settingsCollection.doc('counters');
+      final docRef = _settingsCollection.doc('daily_tickets');
 
       // Transaction başlat
       final newTicketNumber = await _firestore.runTransaction<int>((
@@ -166,14 +189,29 @@ class FirebaseService {
         if (!doc.exists) {
           // Döküman yoksa oluştur
           transaction.set(docRef, {
+            'currentDate': todayKey,
             'lastTicketNumber': 101,
             'updatedAt': FieldValue.serverTimestamp(),
           });
           return 101;
         }
 
-        // Mevcut değeri al ve arttır
+        // Döküman varsa kontrol et
         final data = doc.data()!;
+        final currentDate = data['currentDate'] as String? ?? '';
+        
+        // Eğer farklı günse, sayacı 101'den başlat
+        if (currentDate != todayKey) {
+          print('FIREBASE_SERVICE: Yeni gün, bilet numarası 101\'den başlatılıyor');
+          transaction.update(docRef, {
+            'currentDate': todayKey,
+            'lastTicketNumber': 101,
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
+          return 101;
+        }
+
+        // Aynı günse mevcut değeri al ve arttır
         final currentNumber = data['lastTicketNumber'] as int? ?? 100;
         final newNumber = currentNumber + 1;
 
@@ -214,6 +252,7 @@ class FirebaseService {
         return Stream.value([]);
       }
 
+      // Stream'i optimize et - sadece gerekli alanları dinle
       return _customersCollection
           .where('isActive', isEqualTo: true)
           .snapshots()
@@ -224,7 +263,8 @@ class FirebaseService {
                       (doc) => Customer.fromJson({...doc.data(), 'id': doc.id}),
                     )
                     .toList(),
-          );
+          )
+          .distinct(); // Aynı veriyi tekrar gönderme
     } catch (e) {
       print('Aktif müşterileri dinlerken hata: $e');
       // Boş stream dön

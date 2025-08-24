@@ -236,32 +236,9 @@ class _NewCustomerFormState extends State<NewCustomerForm>
         // Düzenleme modunda, mevcut bilet numarasını kullan
         ticketNumber = widget.initialCustomer!.ticketNumber;
       } else {
-        // Yeni kayıt yapılıyor, önce aile var mı kontrol et
-        bool isAddingSibling = false;
-        int familyTicketNumber = 0;
-
-        // Telefon numarası girilmiş ve aile bağlantısı var mı kontrol et
-        if (_phoneController.text.isNotEmpty &&
-            _isPhoneFound &&
-            _foundCustomer != null) {
-          // Var olan ailenin bilet numarasını kullan
-          if (_foundCustomer!.ticketNumber > 0) {
-            familyTicketNumber = _foundCustomer!.ticketNumber;
-            isAddingSibling = true;
-            print('Var olan aileye ekleniyor. Bilet No: $familyTicketNumber');
-          }
-        }
-
-        if (isAddingSibling) {
-          // Aile bağlantısı varsa yeni bilet alma, var olan numarayı kullan
-          ticketNumber = familyTicketNumber;
-          print(
-              'Kardeş kaydı: Yeni bilet alınmadı, var olan bilet kullanılıyor: $ticketNumber');
-        } else {
-          // Yeni bilet numarası al
-          ticketNumber = await _customerRepository.getNextTicketNumber();
-          print('Yeni bilet numarası alındı: $ticketNumber');
-        }
+        // Yeni kayıt yapılıyor, her giriş için yeni bilet numarası al
+        ticketNumber = await _customerRepository.getNextTicketNumber();
+        print('Yeni bilet numarası alındı: $ticketNumber');
       }
 
       // Yeni müşteri oluştur
@@ -566,11 +543,8 @@ class _NewCustomerFormState extends State<NewCustomerForm>
         _childNameController.text = latestCustomer.childName;
         _parentNameController.text = latestCustomer.parentName;
 
-        // Bilet numarasını form kaydedilene kadar değiştirme
-        if (latestCustomer.ticketNumber > 0) {
-          // Ailenin bilet numarasını göster ama henüz kullanma
-          _ticketNumberController.text = "Aile: ${latestCustomer.ticketNumber}";
-        }
+        // Bilet numarası form kaydedilene kadar değiştirme - artık aile bilgisi gösterme
+        // _ticketNumberController.text = "Aile: ${latestCustomer.ticketNumber}";
 
         // Kalan süre kontrolü
         final remainingTime = latestCustomer.remainingTime;

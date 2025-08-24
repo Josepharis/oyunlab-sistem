@@ -10,8 +10,9 @@ class Customer {
   final DateTime? pauseTime;
   final Duration? pausedDuration; // Duraklatma sırasında biriken toplam süre
   final double price; // Müşterinin ödediği ücret
-  final int?
-  explicitRemainingMinutes; // Firestore'dan doğrudan gelen kalan süre
+  final int? explicitRemainingMinutes; // Firestore'dan doğrudan gelen kalan süre
+  final bool isCompleted; // Müşteri tamamlandı mı?
+  final DateTime? completedTime; // Tamamlanma zamanı
 
   Customer({
     required this.id,
@@ -26,6 +27,8 @@ class Customer {
     this.pausedDuration,
     this.price = 0.0,
     this.explicitRemainingMinutes,
+    this.isCompleted = false,
+    this.completedTime,
   });
 
   // Giriş süresi (dakika cinsinden süreyi Duration nesnesine çevirir)
@@ -171,6 +174,19 @@ class Customer {
       }
 
       final price = (json['price'] as num?)?.toDouble() ?? 0.0;
+      final isCompleted = json['isCompleted'] as bool? ?? false;
+      
+      // Tamamlanma zamanı dönüşümü
+      DateTime? completedTime;
+      if (json['completedTime'] != null) {
+        try {
+          completedTime = DateTime.parse(json['completedTime'] as String);
+          print('Customer.fromJson: completedTime = $completedTime');
+        } catch (e) {
+          print('Customer.fromJson: completedTime parse hatası: $e');
+          completedTime = null;
+        }
+      }
 
       // Çıkış zamanı hesaplaması (durationMinutes kullanılarak)
       final calculatedExitTime = entryTime.add(
@@ -208,6 +224,8 @@ class Customer {
         price: price,
         explicitRemainingMinutes:
             remainingMinutes, // Firestore'dan gelen değeri kullan
+        isCompleted: isCompleted,
+        completedTime: completedTime,
       );
 
       print('Customer.fromJson: Hesaplanan exitTime = ${customer.exitTime}');
@@ -229,6 +247,7 @@ class Customer {
         durationMinutes: 60,
         ticketNumber: 0,
         price: 0.0,
+        isCompleted: false,
       );
     }
   }
@@ -246,6 +265,8 @@ class Customer {
       'pauseTime': pauseTime?.toIso8601String(),
       'pausedDuration': pausedDuration?.inMilliseconds,
       'price': price,
+      'isCompleted': isCompleted,
+      'completedTime': completedTime?.toIso8601String(),
     };
   }
 
@@ -263,6 +284,8 @@ class Customer {
     Duration? pausedDuration,
     double? price,
     int? explicitRemainingMinutes,
+    bool? isCompleted,
+    DateTime? completedTime,
   }) {
     return Customer(
       id: id ?? this.id,
@@ -278,6 +301,8 @@ class Customer {
       price: price ?? this.price,
       explicitRemainingMinutes:
           explicitRemainingMinutes ?? this.explicitRemainingMinutes,
+      isCompleted: isCompleted ?? this.isCompleted,
+      completedTime: completedTime ?? this.completedTime,
     );
   }
 

@@ -41,10 +41,8 @@ class CustomerRepository {
         _startListeningToActiveCustomers();
       }
 
-      // Düzenli aralıklarla UI'ı yenile (kalan süre hesaplamaları için)
-      Timer.periodic(const Duration(seconds: 10), (_) {
-        _customerStreamController.add(_cachedCustomers);
-      });
+      // Performans için gereksiz timer kaldırıldı
+      // UI sadece veri değiştiğinde güncellenir
 
       print('CustomerRepository başarıyla başlatıldı');
     } catch (e) {
@@ -63,10 +61,15 @@ class CustomerRepository {
         return;
       }
 
+      // Stream'i optimize et - sadece değişiklik olduğunda güncelle
       _firebaseService.getActiveCustomersStream().listen(
         (customers) {
-          _cachedCustomers = customers;
-          _customerStreamController.add(_cachedCustomers);
+          // Sadece veri değiştiyse güncelle
+          if (_cachedCustomers.length != customers.length || 
+              !_areCustomersEqual(_cachedCustomers, customers)) {
+            _cachedCustomers = customers;
+            _customerStreamController.add(_cachedCustomers);
+          }
         },
         onError: (error) {
           print('Müşteri verileri dinlenirken hata: $error');
@@ -77,6 +80,20 @@ class CustomerRepository {
     } catch (e) {
       print('Müşteri dinleme başlatma hatası: $e');
     }
+  }
+  
+  /// Müşteri listelerinin eşit olup olmadığını kontrol eder
+  bool _areCustomersEqual(List<Customer> list1, List<Customer> list2) {
+    if (list1.length != list2.length) return false;
+    
+    for (int i = 0; i < list1.length; i++) {
+      if (list1[i].id != list2[i].id || 
+          list1[i].remainingTime != list2[i].remainingTime ||
+          list1[i].isCompleted != list2[i].isCompleted) {
+        return false;
+      }
+    }
+    return true;
   }
 
   /// Tüm müşteri geçmişini getirir (aktif ve tamamlanmış)

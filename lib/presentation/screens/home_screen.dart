@@ -1,7 +1,10 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../core/constants/app_constants.dart';
 import '../../data/models/customer_model.dart';
+import '../../data/models/table_order_model.dart';
 import '../../data/repositories/customer_repository.dart';
+import '../../data/repositories/table_order_repository.dart';
 import '../widgets/countdown_card.dart';
 import '../widgets/new_customer_form.dart';
 import '../../core/theme/app_theme.dart';
@@ -23,6 +26,7 @@ class _HomeScreenState extends State<HomeScreen>
   final GlobalKey<AnimatedListState> _listKey = GlobalKey<AnimatedListState>();
   TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
+  final TableOrderRepository _tableOrderRepository = TableOrderRepository();
 
   @override
   void initState() {
@@ -50,13 +54,366 @@ class _HomeScreenState extends State<HomeScreen>
                 onSave: (customer) async {
                   await widget.customerRepository.addCustomer(customer);
                   if (mounted) {
-                    Navigator.of(context).pop();
+                    Navigator.pop(context);
                   }
                 },
               ),
             ),
       ),
     );
+  }
+
+  // Masa ekleme dialog'u
+  Future<void> _showAddTableDialog() async {
+    final customers = widget.customerRepository.customers;
+    
+    // Firebase'den mevcut masaları al
+    List<TableOrder> existingTables = [];
+    try {
+      existingTables = await _tableOrderRepository.getAllTables();
+    } catch (e) {
+      print('Masa bilgileri alınamadı: $e');
+    }
+    
+    // Masası olmayan aktif çocukları bul
+    final customersWithoutTable = customers.where((customer) {
+      // Aktif olan çocuklar
+      if (customer.remainingTime.inSeconds <= 0 || customer.ticketNumber <= 0) {
+        return false;
+      }
+      
+      // Bu bilet numarası için zaten masa var mı kontrol et
+      final hasTable = existingTables.any((table) => 
+        table.ticketNumber == customer.ticketNumber
+      );
+      
+      return !hasTable; // Masası olmayan çocukları döndür
+    }).toList();
+
+    if (!mounted) return;
+
+    setState(() {
+      // UI'ı güncelle
+    });
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Row(
+            children: [
+              Icon(Icons.table_restaurant_rounded, color: AppTheme.primaryColor),
+              const SizedBox(width: 8),
+              const Text('Masa Ekle'),
+            ],
+          ),
+          content: Container(
+            width: double.maxFinite,
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(context).size.height * 0.6,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (customersWithoutTable.isNotEmpty) ...[
+                  Text(
+                    'Masası olmayan aktif çocuklar:',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: AppTheme.primaryColor,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Expanded(
+                    child: ListView.builder(
+                      shrinkWrap: true,
+                      itemCount: customersWithoutTable.length,
+                      itemBuilder: (context, index) {
+                        final customer = customersWithoutTable[index];
+                        return Card(
+                          margin: const EdgeInsets.only(bottom: 8),
+                          child: ListTile(
+                            leading: CircleAvatar(
+                              backgroundColor: AppTheme.primaryColor.withOpacity(0.1),
+                              child: Text(
+                                customer.childName.substring(0, 1).toUpperCase(),
+                                style: TextStyle(
+                                  color: AppTheme.primaryColor,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                            title: Text(
+                              customer.childName,
+                              style: const TextStyle(fontWeight: FontWeight.bold),
+                            ),
+                            subtitle: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text('Veli: ${customer.parentName}'),
+                                Text('Bilet: #${customer.ticketNumber}'),
+                                Text(
+                                  'Kalan: ${customer.explicitRemainingMinutes ?? customer.remainingTime.inMinutes} dk',
+                                  style: TextStyle(
+                                    color: Colors.green.shade600,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            trailing: ElevatedButton.icon(
+                              onPressed: () async {
+                                Navigator.pop(context);
+                                await _addTableForCustomer(customer);
+                              },
+                              icon: const Icon(Icons.add, size: 16),
+                              label: const Text('Masa Aç'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: AppTheme.primaryColor,
+                                foregroundColor: Colors.white,
+                                elevation: 0,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 8,
+                                ),
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ] else ...[
+                  Icon(
+                    Icons.people_outline,
+                    size: 64,
+                    color: Colors.grey.shade400,
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Masası olmayan aktif çocuk bulunmuyor',
+                    style: TextStyle(
+                      fontSize: 16,
+                      color: Colors.grey.shade600,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Tüm aktif çocukların zaten masası var',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.grey.shade500,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+                const SizedBox(height: 16),
+                // Manuel masa ekleme butonu
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      Navigator.pop(context);
+                      _showManualTableDialog();
+                    },
+                    icon: const Icon(Icons.add_circle_outline),
+                    label: const Text('Manuel Masa Aç'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.accentColor,
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Kapat'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  // Müşteri için masa ekleme
+  Future<void> _addTableForCustomer(Customer customer) async {
+    try {
+      // Aynı bilet numarasına sahip kardeşleri bul
+      final siblings = widget.customerRepository.customers
+          .where((c) => c.ticketNumber == customer.ticketNumber)
+          .toList();
+
+      // Yeni masa oluştur
+      final newTable = TableOrder(
+        tableNumber: customer.ticketNumber, // Bilet numarası masa numarası olarak kullan
+        customerName: customer.parentName,
+        ticketNumber: customer.ticketNumber,
+        childCount: siblings.length,
+        isManual: false, // Müşteri kaydından otomatik oluşturulan masa
+      );
+
+      // Firebase'e ekle
+      await _tableOrderRepository.addTable(newTable);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${customer.childName} için masa #${customer.ticketNumber} açıldı'),
+            backgroundColor: Colors.green.shade600,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Masa eklenirken hata oluştu: $e'),
+            backgroundColor: Colors.red.shade600,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
+  }
+
+  // Manuel masa ekleme dialog'u
+  void _showManualTableDialog() {
+    final TextEditingController nameController = TextEditingController();
+    final TextEditingController childCountController = TextEditingController();
+    childCountController.text = '1';
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Row(
+            children: [
+              Icon(Icons.add_circle_outline, color: AppTheme.accentColor),
+              const SizedBox(width: 8),
+              const Text('Manuel Masa Ekle'),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: nameController,
+                decoration: const InputDecoration(
+                  labelText: 'Müşteri Adı',
+                  prefixIcon: Icon(Icons.person),
+                  hintText: 'Örn: Ahmet Yılmaz',
+                ),
+                autofocus: true,
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: childCountController,
+                decoration: const InputDecoration(
+                  labelText: 'Çocuk Sayısı',
+                  prefixIcon: Icon(Icons.people),
+                  hintText: 'Kaç çocuk için masa açılacak?',
+                ),
+                keyboardType: TextInputType.number,
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('İptal'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                if (nameController.text.trim().isNotEmpty) {
+                  final childCount = int.tryParse(childCountController.text) ?? 1;
+                  await _addManualTable(nameController.text.trim(), childCount);
+                  if (mounted) {
+                    Navigator.pop(context);
+                  }
+                }
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.accentColor,
+              ),
+              child: const Text('Ekle'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  // Manuel masa ekleme
+  Future<void> _addManualTable(String customerName, int childCount) async {
+    try {
+      // Sonraki manuel masa numarasını al
+      final nextTableNumber = await _getNextManualTableNumber();
+
+      // Yeni manuel masa oluştur
+      final newTable = TableOrder(
+        tableNumber: nextTableNumber,
+        customerName: customerName,
+        ticketNumber: 0, // Manuel masalar için 0
+        childCount: childCount,
+        isManual: true, // Manuel olarak işaretle
+      );
+
+      // Firebase'e ekle
+      await _tableOrderRepository.addTable(newTable);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('$customerName için $childCount çocuklu manuel masa #$nextTableNumber açıldı'),
+            backgroundColor: Colors.green.shade600,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Manuel masa eklenirken hata oluştu: $e'),
+            backgroundColor: Colors.red.shade600,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
+  }
+
+  // Sonraki manuel masa numarasını al
+  Future<int> _getNextManualTableNumber() async {
+    try {
+      // Firebase'den mevcut masaları al
+      final existingTables = await _tableOrderRepository.getAllTables();
+      
+      // Manuel masaları filtrele
+      final manualTables = existingTables.where((table) => table.isManual).toList();
+      
+      if (manualTables.isEmpty) {
+        return 1000; // İlk manuel masa
+      }
+      
+      // En yüksek manuel masa numarasını bul
+      final maxTableNumber = manualTables
+          .map((table) => table.tableNumber)
+          .reduce((max, number) => number > max ? number : max);
+      
+      return maxTableNumber + 1;
+    } catch (e) {
+      // Hata durumunda varsayılan numara döndür
+      return 1000;
+    }
   }
 
   @override
@@ -97,10 +454,12 @@ class _HomeScreenState extends State<HomeScreen>
                           ),
                         ],
                       ),
-                      ElevatedButton.icon(
-                        onPressed: _showNewCustomerForm,
-                        icon: const Icon(Icons.add_rounded, size: 20),
-                        label: const Text('Yeni Kayıt'),
+                      Row(
+                        children: [
+                                                ElevatedButton.icon(
+                        onPressed: () async => await _showAddTableDialog(),
+                        icon: const Icon(Icons.table_restaurant_rounded, size: 20),
+                        label: const Text('Masa Ekle'),
                         style: ElevatedButton.styleFrom(
                           elevation: 0,
                           padding: const EdgeInsets.symmetric(
@@ -110,9 +469,29 @@ class _HomeScreenState extends State<HomeScreen>
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
                           ),
-                          backgroundColor: AppTheme.primaryColor,
+                          backgroundColor: AppTheme.accentColor,
                           foregroundColor: Colors.white,
                         ),
+                      ),
+                          const SizedBox(width: 8),
+                          ElevatedButton.icon(
+                            onPressed: _showNewCustomerForm,
+                            icon: const Icon(Icons.add_rounded, size: 20),
+                            label: const Text('Yeni Kayıt'),
+                            style: ElevatedButton.styleFrom(
+                              elevation: 0,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 12,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              backgroundColor: AppTheme.primaryColor,
+                              foregroundColor: Colors.white,
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
@@ -394,7 +773,6 @@ class _HomeScreenState extends State<HomeScreen>
         CountdownCard(
           key: ValueKey('ticket-$ticketNumber'),
           customer: primaryCustomer,
-          siblingCount: siblingCount,
           onTap: () => _showCustomerDetails(primaryCustomer),
         ),
       );
@@ -1021,17 +1399,21 @@ class _HomeScreenState extends State<HomeScreen>
             .where((c) => c.ticketNumber == customer.ticketNumber)
             .toList();
 
-    // Toplam kalan süreyi hesapla
+    // DEBUG: Hangi süreler alınıyor kontrol et
+    print('=== DEBUG: KARDEŞ EKLEME DIALOG ===');
+    print('Müşteri: ${customer.childName}');
+    print('Bilet No: ${customer.ticketNumber}');
+    
     int totalRemainingSeconds = 0;
+    Map<String, int> siblingRemainingSeconds = {};
     for (final child in currentSiblings) {
-      totalRemainingSeconds += child.remainingTime.inSeconds;
+      final childSeconds = child.remainingTime.inSeconds;
+      totalRemainingSeconds += childSeconds;
+      siblingRemainingSeconds[child.id] = childSeconds;
+      print('${child.childName}: $childSeconds saniye (${childSeconds ~/ 60}:${(childSeconds % 60).toString().padLeft(2, '0')})');
     }
-
-    // Mevcut ortalama süre
-    final averageSeconds = totalRemainingSeconds ~/ currentSiblings.length;
-
-    // Toplam süre = ortalama süre * mevcut çocuk sayısı
-    final totalSeconds = averageSeconds * currentSiblings.length;
+    print('Toplam süre: $totalRemainingSeconds saniye (${totalRemainingSeconds ~/ 60}:${(totalRemainingSeconds % 60).toString().padLeft(2, '0')})');
+    print('=====================================');
 
     showDialog(
       context: context,
@@ -1042,19 +1424,11 @@ class _HomeScreenState extends State<HomeScreen>
             final totalChildren = currentSiblings.length + siblingCount;
 
             // Kişi başı düşecek süre (saniye)
-            final perChildSeconds = totalSeconds ~/ totalChildren;
+            final perChildSeconds = totalRemainingSeconds ~/ totalChildren;
             final perChildMinutes = perChildSeconds ~/ 60;
             final perChildRemainingSeconds = perChildSeconds % 60;
 
-            print(
-              'Toplam çocuk: ${currentSiblings.length}, Ekleniyor: $siblingCount, Sonuç: $totalChildren',
-            );
-            print(
-              'Ortalama süre: $averageSeconds sn, Toplam süre: $totalSeconds sn',
-            );
-            print(
-              'Kişi başı yeni süre: $perChildSeconds sn (${perChildMinutes}dk ${perChildRemainingSeconds}sn)',
-            );
+
 
             return AlertDialog(
               title: const Text('Kardeş Ekle'),
@@ -1194,7 +1568,7 @@ class _HomeScreenState extends State<HomeScreen>
                               style: TextStyle(fontSize: 13),
                             ),
                             Text(
-                              '${totalSeconds ~/ 60} dk ${totalSeconds % 60} sn',
+                              '${totalRemainingSeconds ~/ 60} dk ${totalRemainingSeconds % 60} sn',
                               style: TextStyle(
                                 fontSize: 13,
                                 fontWeight: FontWeight.bold,
@@ -1238,7 +1612,7 @@ class _HomeScreenState extends State<HomeScreen>
                   onPressed: () {
                     // Son kez yeni çocuk sayısına göre süreyi hesapla
                     final totalChildren = currentSiblings.length + siblingCount;
-                    final perChildSeconds = totalSeconds ~/ totalChildren;
+                    final perChildSeconds = totalRemainingSeconds ~/ totalChildren;
 
                     // Mevcut kardeşlerin süresini güncelle
                     for (var sibling in currentSiblings) {
@@ -1338,12 +1712,24 @@ class _HomeScreenState extends State<HomeScreen>
       return;
     }
 
-    // Tüm kardeşlerin toplam kalan süresini saniye cinsinden hesapla
+    // DEBUG: Hangi süreler alınıyor kontrol et
+    print('=== DEBUG: KARDEŞ ÇIKARMA DIALOG ===');
+    print('Müşteri: ${customer.childName}');
+    print('Bilet No: ${customer.ticketNumber}');
+    
+    // Tüm kardeşleri tanımla
     final allSiblings = [...siblings, customer];
-    final totalRemainingSeconds = allSiblings.fold<int>(
-      0,
-      (sum, c) => sum + c.remainingTime.inSeconds,
-    );
+
+    int totalRemainingSeconds = 0;
+    Map<String, int> siblingRemainingSeconds = {};
+    for (final sibling in allSiblings) {
+      final siblingSeconds = sibling.remainingTime.inSeconds;
+      totalRemainingSeconds += siblingSeconds;
+      siblingRemainingSeconds[sibling.id] = siblingSeconds;
+      print('${sibling.childName}: $siblingSeconds saniye (${siblingSeconds ~/ 60}:${(siblingSeconds % 60).toString().padLeft(2, '0')})');
+    }
+    print('Toplam süre: $totalRemainingSeconds saniye (${totalRemainingSeconds ~/ 60}:${(totalRemainingSeconds % 60).toString().padLeft(2, '0')})');
+    print('=====================================');
 
     showDialog(
       context: context,
@@ -1446,7 +1832,7 @@ class _HomeScreenState extends State<HomeScreen>
                                     ),
                                     title: Text(sibling.childName),
                                     subtitle: Text(
-                                      'Kalan: ${sibling.remainingTime.inMinutes} dk ${sibling.remainingTime.inSeconds % 60} sn',
+                                      'Kalan: ${(siblingRemainingSeconds[sibling.id]! ~/ 60)} dk ${siblingRemainingSeconds[sibling.id]! % 60} sn',
                                     ),
                                     trailing: ElevatedButton.icon(
                                       icon: const Icon(
@@ -1513,25 +1899,16 @@ class _HomeScreenState extends State<HomeScreen>
       return;
     }
 
-    // TÜM ÇOCUKLARIN ORTALAMA KALAN SÜRESİNİ BUL
-    // Tüm çocukların ortalama süresini hesapla (aynı bilet = aynı süre olmalı)
+    // TÜM ÇOCUKLARIN TOPLAM KALAN SÜRESİNİ BUL - COUNTDOWN CARD İLE AYNI MANTIK
     int totalRemainingSeconds = 0;
     for (final child in allSiblings) {
       totalRemainingSeconds += child.remainingTime.inSeconds;
     }
-    final averageSeconds = totalRemainingSeconds ~/ allSiblings.length;
 
-    // TOPLAM SÜREYİ HESAPLA = ORTALAMA SÜRE * TOPLAM ÇOCUK SAYISI
-    final totalSeconds = averageSeconds * allSiblings.length;
+    // ÇIKARMA SONRASI KİŞİ BAŞI SÜREYİ HESAPLA = TOPLAM KALAN SÜRE / KALAN ÇOCUK SAYISI
+    final perChildSeconds = totalRemainingSeconds ~/ remainingSiblings.length;
 
-    // ÇIKARMA SONRASI KİŞİ BAŞI SÜREYİ HESAPLA = TOPLAM SÜRE / KALAN ÇOCUK SAYISI
-    final perChildSeconds = totalSeconds ~/ remainingSiblings.length;
 
-    print(
-      'Toplam çocuk: ${allSiblings.length}, Çıkarılıyor: 1, Kalan: ${remainingSiblings.length}',
-    );
-    print('Ortalama süre: $averageSeconds sn, Toplam süre: $totalSeconds sn');
-    print('Kişi başı yeni süre: $perChildSeconds sn');
 
     // KALAN KARDEŞLERE YENİ SÜREYİ DAĞIT
     for (var sibling in remainingSiblings) {
@@ -1811,7 +2188,7 @@ class _HomeScreenState extends State<HomeScreen>
                                     ),
                                   ),
                                   Text(
-                                    '${sibling.remainingTime.inMinutes} dk',
+                                    '${sibling.explicitRemainingMinutes ?? sibling.remainingTime.inMinutes} dk',
                                     style: TextStyle(
                                       fontSize: 14,
                                       fontWeight: FontWeight.w500,

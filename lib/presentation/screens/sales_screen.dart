@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../core/theme/app_theme.dart';
@@ -26,11 +27,48 @@ class _SalesScreenState extends State<SalesScreen> {
   // Girişleri sıralama
   String _sortBy = 'giriş_tarihi';
   bool _sortAscending = false;
+  
+  // Performans optimizasyonu için
+  List<Customer> _cachedCustomers = [];
+  bool _isLoading = true;
+  Timer? _debounceTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadCustomers();
+  }
 
   @override
   void dispose() {
     _searchController.dispose();
+    _debounceTimer?.cancel();
     super.dispose();
+  }
+  
+  // Müşteri verilerini yükle
+  Future<void> _loadCustomers() async {
+    if (mounted) {
+      setState(() {
+        _isLoading = true;
+      });
+      
+      try {
+        final customers = await widget.customerRepository.getAllCustomersHistory();
+        if (mounted) {
+          setState(() {
+            _cachedCustomers = customers;
+            _isLoading = false;
+          });
+        }
+      } catch (e) {
+        if (mounted) {
+          setState(() {
+            _isLoading = false;
+          });
+        }
+      }
+    }
   }
 
   // Tarih aralığına göre girişleri filtrele
@@ -45,8 +83,8 @@ class _SalesScreenState extends State<SalesScreen> {
       59,
     );
 
-    // Tüm müşterileri al (hem aktif hem tamamlanmış)
-    final allCustomers = widget.customerRepository.allCustomersHistory;
+    // Cache'den müşterileri al
+    final allCustomers = _cachedCustomers;
 
     return allCustomers.where((customer) {
       // Tarih filtreleme
@@ -157,17 +195,17 @@ class _SalesScreenState extends State<SalesScreen> {
     return _getFilteredCustomers().length;
   }
 
-  // Ortalama giriş süresini hesapla
+  // Ortalama giriş süresini hesapla (saniye hassasiyeti ile)
   Duration _calculateAverageEntryTime() {
     final customers = _getFilteredCustomers();
     if (customers.isEmpty) return Duration.zero;
 
-    final totalMinutes = customers.fold<int>(
+    final totalSeconds = customers.fold<int>(
       0,
-      (sum, customer) => sum + customer.initialTime.inMinutes,
+      (sum, customer) => sum + customer.initialTime.inSeconds,
     );
 
-    return Duration(minutes: (totalMinutes / customers.length).round());
+    return Duration(seconds: (totalSeconds / customers.length).round());
   }
 
   @override
@@ -180,9 +218,11 @@ class _SalesScreenState extends State<SalesScreen> {
     return Scaffold(
       backgroundColor: AppTheme.backgroundColor,
       body: SafeArea(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+        child: RefreshIndicator(
+          onRefresh: _loadCustomers,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
             // Üst bilgi alanı
             Container(
               decoration: BoxDecoration(
@@ -195,13 +235,13 @@ class _SalesScreenState extends State<SalesScreen> {
                   ),
                 ],
               ),
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(12),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   // Başlık
                   Text(
-                    'Müşteri Kayıtları',
+                    'Müşteriler',
                     style: TextStyle(
                       fontSize: 24,
                       fontWeight: FontWeight.bold,
@@ -265,7 +305,34 @@ class _SalesScreenState extends State<SalesScreen> {
                           value: totalCustomers.toString(),
                         ),
                       ),
-                      const SizedBox(width: 12),
+                      SizedBox(width: MediaQuery.of(context).size.width < 400 ? 8 : 12),
+
+                      // Aktif Müşteri
+                      Expanded(
+                        child: _buildSummaryCard(
+                          icon: Icons.play_circle,
+                          iconColor: Colors.green.shade700,
+                          title: 'Aktif',
+                          value: sortedCustomers.where((c) => !c.isCompleted && c.remainingTime.inSeconds > 0).length.toString(),
+                        ),
+                      ),
+                    ],
+                  ),
+                  
+                  const SizedBox(height: 8),
+                  
+                  Row(
+                    children: [
+                      // Tamamlanan Müşteri
+                      Expanded(
+                        child: _buildSummaryCard(
+                          icon: Icons.check_circle,
+                          iconColor: Colors.blue.shade700,
+                          title: 'Tamamlanan',
+                          value: sortedCustomers.where((c) => c.isCompleted).length.toString(),
+                        ),
+                      ),
+                      SizedBox(width: MediaQuery.of(context).size.width < 400 ? 8 : 12),
 
                       // Ortalama Süre
                       Expanded(
@@ -273,7 +340,7 @@ class _SalesScreenState extends State<SalesScreen> {
                           icon: Icons.timer_outlined,
                           iconColor: Colors.orange.shade700,
                           title: 'Ortalama Süre',
-                          value: '${averageTime.inMinutes} dk',
+                          value: _formatDuration(averageTime),
                         ),
                       ),
                     ],
@@ -291,8 +358,14 @@ class _SalesScreenState extends State<SalesScreen> {
                     child: TextField(
                       controller: _searchController,
                       onChanged: (value) {
-                        setState(() {
-                          _searchQuery = value;
+                        // Debounce ile performans optimizasyonu
+                        _debounceTimer?.cancel();
+                        _debounceTimer = Timer(const Duration(milliseconds: 300), () {
+                          if (mounted) {
+                            setState(() {
+                              _searchQuery = value;
+                            });
+                          }
                         });
                       },
                       decoration: InputDecoration(
@@ -320,7 +393,7 @@ class _SalesScreenState extends State<SalesScreen> {
 
             // Liste başlığı
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+              padding: const EdgeInsets.fromLTRB(8, 16, 8, 8),
               child: Row(
                 children: [
                   Text(
@@ -397,31 +470,50 @@ class _SalesScreenState extends State<SalesScreen> {
 
             // Listeleme
             Expanded(
-              child:
-                  sortedCustomers.isEmpty
+              child: _isLoading
+                  ? _buildLoadingState()
+                  : sortedCustomers.isEmpty
                       ? _buildEmptyState()
                       : ListView.builder(
-                        padding: const EdgeInsets.all(16),
+                        padding: const EdgeInsets.all(8),
                         itemCount: sortedCustomers.length,
                         itemBuilder: (context, index) {
                           final customer = sortedCustomers[index];
-                          final exitTime = customer.entryTime.add(
-                            customer.initialTime,
-                          );
 
                           // Her müşteri için, toplam ve kalan süre
-                          final totalTime = customer.initialTime;
+                          final totalTime = customer.initialTime; // Girişte sistemde var olan süre
                           final remainingTime = customer.remainingTime;
+                          
+                          // Kullanılan süreyi hesapla (saniye hassasiyeti ile)
+                          Duration usedDuration;
+                          if (customer.isCompleted && customer.completedTime != null) {
+                            // Tamamlanmış müşteri için: tamamlanma zamanı - giriş zamanı
+                            usedDuration = customer.completedTime!.difference(customer.entryTime);
+                          } else {
+                            // Aktif müşteri için: şu an - giriş zamanı
+                            final now = DateTime.now();
+                            usedDuration = now.difference(customer.entryTime);
+                          }
+                          
+                          // Kullanılan süre, toplam süreyi geçemez
+                          if (usedDuration > totalTime) {
+                            usedDuration = totalTime;
+                          }
+                          
+                          // Çıkış zamanı (tamamlanma zamanı varsa onu kullan, yoksa hesaplanan çıkış zamanı)
+                          final actualExitTime = customer.isCompleted && customer.completedTime != null
+                              ? customer.completedTime!
+                              : customer.exitTime;
 
                           return Card(
-                            margin: const EdgeInsets.only(bottom: 12),
+                            margin: const EdgeInsets.only(bottom: 8, left: 4, right: 4),
                             elevation: 0,
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(12),
                               side: BorderSide(color: Colors.grey.shade200),
                             ),
                             child: Padding(
-                              padding: const EdgeInsets.all(16),
+                              padding: const EdgeInsets.all(12),
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
@@ -460,9 +552,11 @@ class _SalesScreenState extends State<SalesScreen> {
                                           children: [
                                             Text(
                                               customer.childName,
-                                              style: const TextStyle(
+                                              style: TextStyle(
                                                 fontSize: 16,
                                                 fontWeight: FontWeight.bold,
+                                                decoration: customer.isCompleted ? TextDecoration.lineThrough : null,
+                                                color: customer.isCompleted ? Colors.grey.shade600 : Colors.black,
                                               ),
                                               maxLines: 1,
                                               overflow: TextOverflow.ellipsis,
@@ -481,115 +575,258 @@ class _SalesScreenState extends State<SalesScreen> {
                                         ),
                                       ),
 
-                                      // Kalan süre bilgisi
-                                      if (remainingTime.inSeconds > 0)
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 8,
-                                            vertical: 4,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: Colors.green.shade50,
-                                            borderRadius: BorderRadius.circular(
-                                              8,
-                                            ),
-                                            border: Border.all(
-                                              color: Colors.green.shade200,
-                                            ),
-                                          ),
-                                          child: Text(
-                                            'Kalan: ${remainingTime.inHours > 0 ? '${remainingTime.inHours} sa ' : ''}${remainingTime.inMinutes % 60} dk',
-                                            style: TextStyle(
-                                              fontSize: 12,
-                                              fontWeight: FontWeight.w500,
-                                              color: Colors.green.shade700,
-                                            ),
+                                      // Durum bilgisi
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 8,
+                                          vertical: 4,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: customer.isCompleted 
+                                              ? Colors.green.shade50 
+                                              : Colors.blue.shade50,
+                                          borderRadius: BorderRadius.circular(8),
+                                          border: Border.all(
+                                            color: customer.isCompleted 
+                                                ? Colors.green.shade200 
+                                                : Colors.blue.shade200,
                                           ),
                                         ),
+                                        child: Text(
+                                          customer.isCompleted 
+                                              ? 'Tamamlandı'
+                                              : remainingTime.inSeconds > 0
+                                                  ? 'Aktif'
+                                                  : 'Süre Doldu',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w500,
+                                            color: customer.isCompleted 
+                                                ? Colors.green.shade700 
+                                                : remainingTime.inSeconds > 0
+                                                    ? Colors.blue.shade700
+                                                    : Colors.red.shade700,
+                                          ),
+                                        ),
+                                      ),
                                     ],
                                   ),
 
                                   const SizedBox(height: 12),
 
-                                  // Alt kısım - Zaman bilgileri
+                                                                    // Alt kısım - Zaman bilgileri
                                   Container(
-                                    padding: const EdgeInsets.all(12),
+                                    padding: const EdgeInsets.all(8),
                                     decoration: BoxDecoration(
                                       color: Colors.grey.shade50,
                                       borderRadius: BorderRadius.circular(8),
                                     ),
-                                    child: Row(
-                                      children: [
-                                        // Giriş zamanı
-                                        Expanded(
-                                          child: _buildTimeInfo(
-                                            icon: Icons.login,
-                                            iconColor: Colors.green.shade600,
-                                            title: 'Giriş',
-                                            time: customer.entryTime,
-                                          ),
-                                        ),
-
-                                        // Ayırıcı
-                                        Container(
-                                          height: 40,
-                                          width: 1,
-                                          color: Colors.grey.shade300,
-                                        ),
-
-                                        // Çıkış zamanı
-                                        Expanded(
-                                          child: _buildTimeInfo(
-                                            icon: Icons.logout,
-                                            iconColor: Colors.red.shade600,
-                                            title: 'Çıkış',
-                                            time: exitTime,
-                                          ),
-                                        ),
-
-                                        // Ayırıcı
-                                        Container(
-                                          height: 40,
-                                          width: 1,
-                                          color: Colors.grey.shade300,
-                                        ),
-
-                                        // Toplam süre
-                                        Expanded(
-                                          child: Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.center,
+                                    child: LayoutBuilder(
+                                      builder: (context, constraints) {
+                                        // Ekran genişliğine göre responsive ayarlar
+                                        final isSmallScreen = constraints.maxWidth < 400;
+                                        final isMediumScreen = constraints.maxWidth < 600;
+                                        
+                                        if (isSmallScreen) {
+                                          // Küçük ekranlar için dikey düzen
+                                          return Column(
                                             children: [
+                                              // Üst sıra: Giriş, Çıkış, Toplam
                                               Row(
-                                                mainAxisAlignment:
-                                                    MainAxisAlignment.center,
                                                 children: [
-                                                  Icon(
-                                                    Icons.timer,
-                                                    size: 14,
-                                                    color:
-                                                        Colors.orange.shade600,
+                                                  Expanded(
+                                                    child: _buildTimeInfo(
+                                                      icon: Icons.login,
+                                                      iconColor: Colors.green.shade600,
+                                                      title: 'Giriş',
+                                                      time: customer.entryTime,
+                                                      isSmall: true,
+                                                    ),
                                                   ),
-                                                  const SizedBox(width: 4),
-                                                  Text(
-                                                    'Toplam Süre',
-                                                    style: TextStyle(
-                                                      fontSize: 12,
-                                                      color:
-                                                          Colors.grey.shade600,
+                                                  Container(
+                                                    height: 30,
+                                                    width: 1,
+                                                    color: Colors.grey.shade300,
+                                                  ),
+                                                  Expanded(
+                                                    child: _buildTimeInfo(
+                                                      icon: customer.isCompleted ? Icons.check_circle : Icons.logout,
+                                                      iconColor: customer.isCompleted ? Colors.green.shade600 : Colors.red.shade600,
+                                                      title: customer.isCompleted ? 'Tamamlandı' : 'Çıkış',
+                                                      time: actualExitTime,
+                                                      isSmall: true,
+                                                    ),
+                                                  ),
+                                                  Container(
+                                                    height: 30,
+                                                    width: 1,
+                                                    color: Colors.grey.shade300,
+                                                  ),
+                                                  Expanded(
+                                                    child: _buildTimeInfo(
+                                                      icon: Icons.schedule,
+                                                      iconColor: AppTheme.primaryColor,
+                                                      title: 'Toplam',
+                                                      time: null,
+                                                      duration: totalTime,
+                                                      isSmall: true,
                                                     ),
                                                   ),
                                                 ],
                                               ),
-                                              const SizedBox(height: 4),
-                                              Text(
-                                                '${totalTime.inHours > 0 ? '${totalTime.inHours} sa ' : ''}${totalTime.inMinutes % 60} dk',
-                                                style: const TextStyle(
-                                                  fontSize: 14,
-                                                  fontWeight: FontWeight.bold,
+                                              const SizedBox(height: 8),
+                                              // Alt sıra: Kullanılan, Kalan
+                                              Row(
+                                                children: [
+                                                  Expanded(
+                                                    child: _buildTimeInfo(
+                                                      icon: Icons.timer,
+                                                      iconColor: Colors.purple.shade600,
+                                                      title: 'Kullanılan',
+                                                      time: null,
+                                                      duration: usedDuration,
+                                                      isSmall: true,
+                                                    ),
+                                                  ),
+                                                  Container(
+                                                    height: 30,
+                                                    width: 1,
+                                                    color: Colors.grey.shade300,
+                                                  ),
+                                                  Expanded(
+                                                    child: _buildTimeInfo(
+                                                      icon: Icons.schedule,
+                                                      iconColor: Colors.orange.shade600,
+                                                      title: 'Kalan',
+                                                      time: null,
+                                                      duration: customer.isCompleted ? Duration.zero : remainingTime,
+                                                      isSmall: true,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ],
+                                          );
+                                        } else {
+                                          // Orta ve büyük ekranlar için yatay düzen
+                                          return Row(
+                                            children: [
+                                              // Giriş zamanı
+                                              Expanded(
+                                                child: _buildTimeInfo(
+                                                  icon: Icons.login,
+                                                  iconColor: Colors.green.shade600,
+                                                  title: 'Giriş',
+                                                  time: customer.entryTime,
+                                                  isSmall: false,
+                                                ),
+                                              ),
+
+                                              // Ayırıcı
+                                              Container(
+                                                height: 40,
+                                                width: 1,
+                                                color: Colors.grey.shade300,
+                                              ),
+
+                                              // Çıkış zamanı
+                                              Expanded(
+                                                child: _buildTimeInfo(
+                                                  icon: customer.isCompleted ? Icons.check_circle : Icons.logout,
+                                                  iconColor: customer.isCompleted ? Colors.green.shade600 : Colors.red.shade600,
+                                                  title: customer.isCompleted ? 'Tamamlandı' : 'Çıkış',
+                                                  time: actualExitTime,
+                                                  isSmall: false,
+                                                ),
+                                              ),
+
+                                              // Ayırıcı
+                                              Container(
+                                                height: 40,
+                                                width: 1,
+                                                color: Colors.grey.shade300,
+                                              ),
+
+                                              // Toplam süre
+                                              Expanded(
+                                                child: _buildTimeInfo(
+                                                  icon: Icons.schedule,
+                                                  iconColor: AppTheme.primaryColor,
+                                                  title: 'Toplam',
+                                                  time: null,
+                                                  duration: totalTime,
+                                                  isSmall: false,
+                                                ),
+                                              ),
+
+                                              // Ayırıcı
+                                              Container(
+                                                height: 40,
+                                                width: 1,
+                                                color: Colors.grey.shade300,
+                                              ),
+
+                                              // Kullanılan süre
+                                              Expanded(
+                                                child: _buildTimeInfo(
+                                                  icon: Icons.timer,
+                                                  iconColor: Colors.purple.shade600,
+                                                  title: 'Kullanılan',
+                                                  time: null,
+                                                  duration: usedDuration,
+                                                  isSmall: false,
+                                                ),
+                                              ),
+                                              
+                                              // Ayırıcı
+                                              Container(
+                                                height: 40,
+                                                width: 1,
+                                                color: Colors.grey.shade300,
+                                              ),
+                                              
+                                              // Kalan süre
+                                              Expanded(
+                                                child: _buildTimeInfo(
+                                                  icon: Icons.schedule,
+                                                  iconColor: Colors.orange.shade600,
+                                                  title: 'Kalan',
+                                                  time: null,
+                                                  duration: customer.isCompleted ? Duration.zero : remainingTime,
+                                                  isSmall: false,
                                                 ),
                                               ),
                                             ],
+                                          );
+                                        }
+                                      },
+                                    ),
+                                  ),
+                                  
+                                  // Satın alınan süre bilgisi
+                                  const SizedBox(height: 12),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                    decoration: BoxDecoration(
+                                      color: Colors.orange.shade50,
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(color: Colors.orange.shade200),
+                                    ),
+                                    child: Row(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
+                                        Icon(
+                                          Icons.timer_outlined,
+                                          size: 16,
+                                          color: Colors.orange.shade700,
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Text(
+                                          'Satın Alınan Süre: ${customer.price > 0 ? _formatDuration(totalTime) : 'Yok'}',
+                                          style: TextStyle(
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.w600,
+                                            color: Colors.orange.shade700,
                                           ),
                                         ),
                                       ],
@@ -603,6 +840,7 @@ class _SalesScreenState extends State<SalesScreen> {
                       ),
             ),
           ],
+        ),
         ),
       ),
     );
@@ -658,7 +896,9 @@ class _SalesScreenState extends State<SalesScreen> {
     required IconData icon,
     required Color iconColor,
     required String title,
-    required DateTime time,
+    DateTime? time,
+    Duration? duration,
+    bool isSmall = false,
   }) {
     final timeFormatter = DateFormat('HH:mm', 'tr_TR');
     final dateFormatter = DateFormat('d MMM', 'tr_TR');
@@ -669,24 +909,81 @@ class _SalesScreenState extends State<SalesScreen> {
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon, size: 14, color: iconColor),
-            const SizedBox(width: 4),
+            Icon(icon, size: isSmall ? 12 : 14, color: iconColor),
+            SizedBox(width: isSmall ? 2.0 : 4.0),
             Text(
               title,
-              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+              style: TextStyle(
+                fontSize: isSmall ? 10 : 12, 
+                color: Colors.grey.shade600
+              ),
             ),
           ],
         ),
-        const SizedBox(height: 4),
-        Text(
-          timeFormatter.format(time),
-          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
-        ),
-        Text(
-          dateFormatter.format(time),
-          style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
-        ),
+        SizedBox(height: isSmall ? 2.0 : 4.0),
+        if (time != null) ...[
+          Text(
+            timeFormatter.format(time),
+            style: TextStyle(
+              fontSize: isSmall ? 12 : 14, 
+              fontWeight: FontWeight.bold
+            ),
+          ),
+          Text(
+            dateFormatter.format(time),
+            style: TextStyle(
+              fontSize: isSmall ? 9 : 11, 
+              color: Colors.grey.shade500
+            ),
+          ),
+        ] else if (duration != null) ...[
+          Text(
+            _formatDuration(duration),
+            style: TextStyle(
+              fontSize: isSmall ? 12 : 14, 
+              fontWeight: FontWeight.bold,
+              color: iconColor,
+            ),
+          ),
+        ],
       ],
+    );
+  }
+
+  // Süre formatlaması için yardımcı metod (saniye bilgisi ile)
+  String _formatDuration(Duration duration) {
+    if (duration.inHours > 0) {
+      return '${duration.inHours}s ${duration.inMinutes % 60}dk ${duration.inSeconds % 60}sn';
+    } else if (duration.inMinutes > 0) {
+      return '${duration.inMinutes}dk ${duration.inSeconds % 60}sn';
+    } else {
+      return '${duration.inSeconds}sn';
+    }
+  }
+
+  Widget _buildLoadingState() {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(
+            width: 60,
+            height: 60,
+            child: CircularProgressIndicator(
+              strokeWidth: 3,
+              valueColor: AlwaysStoppedAnimation<Color>(AppTheme.primaryColor),
+            ),
+          ),
+          const SizedBox(height: 24),
+          Text(
+            'Müşteri verileri yükleniyor...',
+            style: TextStyle(
+              fontSize: 16,
+              color: AppTheme.secondaryTextColor,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
