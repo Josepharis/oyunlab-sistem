@@ -251,4 +251,30 @@ class SaleService {
       };
     }
   }
+
+  // Real-time satış stream'i - kullanıcının satışlarını dinle
+  Stream<List<SaleRecord>> getUserSalesStream(
+    String userId, {
+    int limit = 50,
+  }) {
+    try {
+      return _firestore
+          .collection(_collection)
+          .where('userId', isEqualTo: userId)
+          .orderBy('date', descending: true)
+          .limit(limit)
+          .snapshots()
+          .map((snapshot) {
+        return snapshot.docs.map((doc) {
+          return SaleRecord.fromJson({
+            'id': doc.id,
+            ...doc.data(),
+          });
+        }).toList();
+      });
+    } catch (e) {
+      print('Satış stream oluşturulurken hata: $e');
+      return Stream.value([]);
+    }
+  }
 }

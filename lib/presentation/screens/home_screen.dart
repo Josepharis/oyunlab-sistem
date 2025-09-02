@@ -1,11 +1,16 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../../core/constants/app_constants.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+
 import '../../data/models/customer_model.dart';
 import '../../data/models/table_order_model.dart';
+import '../../data/models/sale_record_model.dart';
+import '../../data/models/business_settings_model.dart';
 import '../../data/repositories/customer_repository.dart';
 import '../../data/repositories/table_order_repository.dart';
+import '../../data/repositories/business_settings_repository.dart';
+import '../../data/services/sale_service.dart';
 import '../widgets/countdown_card.dart';
 import '../widgets/new_customer_form.dart';
 import '../../core/theme/app_theme.dart';
@@ -33,6 +38,8 @@ class _HomeScreenState extends State<HomeScreen>
   TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
   final TableOrderRepository _tableOrderRepository = TableOrderRepository();
+  final SaleService _saleService = SaleService();
+  final BusinessSettingsRepository _businessSettingsRepository = BusinessSettingsRepository();
 
   @override
   void initState() {
@@ -213,7 +220,7 @@ class _HomeScreenState extends State<HomeScreen>
                                 Text('Veli: ${customer.parentName}'),
                                 Text('Bilet: #${customer.ticketNumber}'),
                                 Text(
-                                  'Kalan: ${customer.explicitRemainingMinutes ?? customer.remainingTime.inMinutes} dk',
+                                  'Kalan: ${customer.currentRemainingSecondsPerChild ~/ 60} dk',
                                   style: TextStyle(
                                     color: Colors.green.shade600,
                                     fontWeight: FontWeight.w500,
@@ -724,7 +731,7 @@ class _HomeScreenState extends State<HomeScreen>
                   final activeCustomers = allCustomers
                       .where((customer) => 
                           customer.isActive && 
-                          customer.activeRemainingTime.inSeconds > 0 &&
+                          customer.currentRemainingSeconds > 0 &&
                           !customer.isCompleted)
                       .toList();
 
@@ -1383,8 +1390,14 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   // Süre Ekleme Dialog
-  void _showAddTimeDialog(Customer customer) {
-    int additionalMinutes = 30;
+  void _showAddTimeDialog(Customer customer) async {
+    // İşletme ayarlarından süre seçeneklerini al
+    final businessSettings = await _businessSettingsRepository.getBusinessSettingByCategory(BusinessCategory.oyunAlani);
+    final durationOptions = businessSettings?.durationPrices.where((dp) => dp.isActive).toList() ?? 
+        BusinessSettings.getDefaultDurationPrices(BusinessCategory.oyunAlani);
+    
+    int additionalMinutes = durationOptions.isNotEmpty ? durationOptions.first.duration : 30;
+    double selectedPrice = durationOptions.isNotEmpty ? durationOptions.first.price : 1.0;
 
     showDialog(
       context: context,
@@ -1458,39 +1471,47 @@ class _HomeScreenState extends State<HomeScreen>
                     spacing: 8,
                     runSpacing: 8,
                     alignment: WrapAlignment.center,
-                    children:
-                        [15, 30, 45, 60, 90, 120]
-                            .map(
-                              (duration) => ElevatedButton(
-                                onPressed: () {
-                                  setState(() {
-                                    additionalMinutes = duration;
-                                  });
-                                },
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor:
-                                      additionalMinutes == duration
-                                          ? AppTheme.primaryColor
-                                          : AppTheme.primaryColor.withOpacity(
-                                            0.1,
-                                          ),
-                                  foregroundColor:
-                                      additionalMinutes == duration
-                                          ? Colors.white
-                                          : AppTheme.primaryColor,
-                                  elevation: 0,
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                    vertical: 8,
-                                  ),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                ),
-                                child: Text('$duration dk'),
+                    children: durationOptions
+                        .map(
+                          (durationPrice) => ElevatedButton(
+                            onPressed: () {
+                              setState(() {
+                                additionalMinutes = durationPrice.duration;
+                                selectedPrice = durationPrice.price;
+                              });
+                            },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor:
+                                  additionalMinutes == durationPrice.duration
+                                      ? AppTheme.primaryColor
+                                      : AppTheme.primaryColor.withOpacity(0.1),
+                              foregroundColor:
+                                  additionalMinutes == durationPrice.duration
+                                      ? Colors.white
+                                      : AppTheme.primaryColor,
+                              elevation: 0,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 8,
                               ),
-                            )
-                            .toList(),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                            ),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text('${durationPrice.duration} dk'),
+                                if (durationPrice.price > 0)
+                                  Text(
+                                    '${durationPrice.price.toStringAsFixed(0)}₺',
+                                    style: const TextStyle(fontSize: 10),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        )
+                        .toList(),
                   ),
                 ],
               ),
@@ -1500,7 +1521,7 @@ class _HomeScreenState extends State<HomeScreen>
                   child: const Text('İptal'),
                 ),
                 ElevatedButton(
-                  onPressed: () {
+                  onPressed: () async {
                     // Süre ekleme işlemi
                     // Aynı bilet numarasına sahip tüm kardeşleri bul
                     final siblings =
@@ -1512,21 +1533,18 @@ class _HomeScreenState extends State<HomeScreen>
 
                     final int siblingCount = siblings.length;
 
-                    // Her bir kardeş için süreyi ekleyeceğiz
+                    // YENİ SİSTEM - Her bir kardeş için süreyi ekleyeceğiz
                     for (var sibling in siblings) {
-                      final updatedCustomer = Customer(
-                        id: sibling.id,
-                        childName: sibling.childName,
-                        parentName: sibling.parentName,
-                        phoneNumber: sibling.phoneNumber,
-                        entryTime: sibling.entryTime,
-                        durationMinutes:
-                            sibling.durationMinutes + additionalMinutes,
-                        ticketNumber: sibling.ticketNumber,
+                      final additionalSeconds = additionalMinutes * 60;
+                      final updatedCustomer = sibling.copyWith(
+                        totalSeconds: sibling.totalSeconds + additionalSeconds,
                       );
 
                       widget.customerRepository.updateCustomer(updatedCustomer);
                     }
+
+                    // Süre satın alma işlemini satışlara kaydet
+                    await _createTimePurchaseSaleRecord(customer, additionalMinutes, siblingCount, selectedPrice);
 
                     Navigator.pop(context);
 
@@ -1561,10 +1579,10 @@ class _HomeScreenState extends State<HomeScreen>
   void _showAddSiblingDialog(Customer customer) {
     int siblingCount = 1; // Eklenecek kardeş sayısı
 
-    // Mevcut kardeşleri bul (sadece aktif olanlar)
+    // Mevcut kardeşleri bul (sadece tamamlanmamış olanlar)
     final currentSiblings =
         widget.customerRepository.customers
-            .where((c) => c.ticketNumber == customer.ticketNumber && c.remainingTime.inSeconds > 0)
+            .where((c) => c.ticketNumber == customer.ticketNumber && !c.isCompleted)
             .toList();
 
     // DEBUG: Hangi süreler alınıyor kontrol et
@@ -1588,11 +1606,13 @@ class _HomeScreenState extends State<HomeScreen>
       builder: (context) {
         return StatefulBuilder(
           builder: (context, setState) {
+            // Mevcut çocuk sayısını müşterinin childCount'undan al
+            final currentChildCount = currentSiblings.isNotEmpty ? currentSiblings.first.childCount : 1;
             // Yeni kardeş sayısı dahil toplam çocuk sayısı
-            final totalChildren = currentSiblings.length + siblingCount;
+            final totalChildren = currentChildCount + siblingCount;
             
             // Debug: Hesaplama bilgilerini log'la
-            print('DEBUG: Mevcut çocuk sayısı: ${currentSiblings.length}');
+            print('DEBUG: Mevcut çocuk sayısı: $currentChildCount');
             print('DEBUG: Eklenecek çocuk sayısı: $siblingCount');
             print('DEBUG: Toplam çocuk sayısı: $totalChildren');
 
@@ -1707,7 +1727,7 @@ class _HomeScreenState extends State<HomeScreen>
                               style: TextStyle(fontSize: 13),
                             ),
                             Text(
-                              '${currentSiblings.length}',
+                              '$currentChildCount',
                               style: const TextStyle(
                                 fontSize: 13,
                                 fontWeight: FontWeight.bold,
@@ -1800,34 +1820,27 @@ class _HomeScreenState extends State<HomeScreen>
                 ),
                 ElevatedButton(
                   onPressed: () {
+                    // Mevcut çocuk sayısını müşterinin childCount'undan al
+                    final currentChildCount = currentSiblings.isNotEmpty ? currentSiblings.first.childCount : 1;
                     // Son kez yeni çocuk sayısına göre süreyi hesapla
-                    final totalChildren = currentSiblings.length + siblingCount;
+                    final totalChildren = currentChildCount + siblingCount;
                     final perChildSeconds = totalRemainingSeconds ~/ totalChildren;
                     
                     // Debug: Hesaplama bilgilerini log'la
-                    print('DEBUG: Son hesaplama - Mevcut: ${currentSiblings.length}, Eklenecek: $siblingCount, Toplam: $totalChildren');
+                    print('DEBUG: Son hesaplama - Mevcut: $currentChildCount, Eklenecek: $siblingCount, Toplam: $totalChildren');
                     print('DEBUG: Toplam süre: $totalRemainingSeconds saniye, Kişi başı: $perChildSeconds saniye');
 
-                    // Mevcut kardeşlerin süresini güncelle (ana müşteri dahil)
+                    // YENİ SİSTEM - Mevcut kardeşlerin süresini güncelle (ana müşteri dahil)
                     for (var sibling in currentSiblings) {
-                      // Geçen süre (giriş zamanından şu ana kadar)
-                      final elapsedTime = DateTime.now().difference(
-                        sibling.entryTime,
-                      );
-
-                      // Yeni toplam süre = geçen süre + yeni kişi başı kalan süre
-                      final totalDurationSeconds =
-                          elapsedTime.inSeconds + perChildSeconds;
-                      final newDurationMinutes = totalDurationSeconds ~/ 60;
-
-                      // TÜM KARDEŞLERİN childCount'ını güncelle
+                      // YENİ SİSTEM - TÜM KARDEŞLERİN childCount'ını güncelle
+                      // Toplam süre değişmez, sadece childCount güncellenir
                       final updatedCustomer = sibling.copyWith(
-                        durationMinutes: newDurationMinutes,
-                        childCount: currentSiblings.length + siblingCount, // Doğru toplam çocuk sayısı
+                        childCount: totalChildren, // Doğru toplam çocuk sayısı
+                        siblingIds: [...currentSiblings.map((s) => s.id), ...List.generate(siblingCount, (index) => 'temp_${index}')],
                       );
                       
                       // Debug: Güncellenen müşteri bilgilerini log'la
-                      print('DEBUG: ${sibling.childName} güncellendi - Yeni süre: $newDurationMinutes dk, Yeni childCount: $totalChildren');
+                      print('DEBUG: ${sibling.childName} güncellendi - Toplam süre: ${sibling.totalSeconds} saniye, Yeni childCount: $totalChildren');
 
                       widget.customerRepository.updateCustomer(updatedCustomer);
                     }
@@ -1861,7 +1874,7 @@ class _HomeScreenState extends State<HomeScreen>
   void _showRemoveSiblingDialog(Customer customer) {
     // Aynı bilet numarasına sahip tüm kardeşleri bul (seçilen çocuk dahil)
     final siblings = widget.customerRepository.customers
-        .where((c) => c.ticketNumber == customer.ticketNumber && c.remainingTime.inSeconds > 0)
+        .where((c) => c.ticketNumber == customer.ticketNumber && !c.isCompleted)
         .toList();
 
     if (siblings.length <= 1) {
@@ -1937,10 +1950,10 @@ class _HomeScreenState extends State<HomeScreen>
                                   for (var remainingSibling in updatedSiblings) {
                                     final elapsedTime = DateTime.now().difference(remainingSibling.entryTime);
                                     final totalDurationSeconds = elapsedTime.inSeconds + perChildSeconds;
-                                    final newDurationMinutes = totalDurationSeconds ~/ 60;
+                                    // final newDurationMinutes = totalDurationSeconds ~/ 60;
                                     
                                     final updatedCustomer = remainingSibling.copyWith(
-                                      durationMinutes: newDurationMinutes,
+                                      totalSeconds: totalDurationSeconds,
                                       childCount: updatedSiblings.length,
                                     );
                                     
@@ -1950,7 +1963,7 @@ class _HomeScreenState extends State<HomeScreen>
                                 
                                 // Çıkarılan kardeşin süresini sıfırla
                                 final removedSibling = sibling.copyWith(
-                                  durationMinutes: 0,
+                                  totalSeconds: 0,
                                   childCount: 1,
                                 );
                                 await widget.customerRepository.updateCustomer(removedSibling);
@@ -2107,7 +2120,7 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  // Kardeş çıkarma işlemi
+  // Kardeş çıkarma işlemi - YENİ SİSTEM
   void _removeSibling(Customer siblingToRemove, List<Customer> allSiblings) {
     // Çıkarma işleminden sonra kalan kardeş sayısı
     final remainingSiblings =
@@ -2127,21 +2140,19 @@ class _HomeScreenState extends State<HomeScreen>
       return;
     }
 
-    // TÜM ÇOCUKLARIN TOPLAM KALAN SÜRESİNİ BUL - COUNTDOWN CARD İLE AYNI MANTIK
+    // YENİ SİSTEM - Toplam kalan süre hesaplama
     int totalRemainingSeconds = 0;
     for (final child in allSiblings) {
-      totalRemainingSeconds += child.remainingTime.inSeconds;
+      totalRemainingSeconds += child.currentRemainingSeconds;
     }
 
     // ÇIKARMA SONRASI KİŞİ BAŞI SÜREYİ HESAPLA = TOPLAM KALAN SÜRE / KALAN ÇOCUK SAYISI
     final perChildSeconds = totalRemainingSeconds ~/ remainingSiblings.length;
     
     // Debug: Hesaplama bilgilerini log'la
-    print('DEBUG: Kardeş çıkarma - Toplam süre: $totalRemainingSeconds saniye');
+    print('DEBUG: Kardeş çıkarma - Toplam kalan süre: $totalRemainingSeconds saniye');
     print('DEBUG: Kardeş çıkarma - Kalan çocuk sayısı: ${remainingSiblings.length}');
     print('DEBUG: Kardeş çıkarma - Kişi başı süre: $perChildSeconds saniye');
-
-
 
     // KALAN KARDEŞLERE YENİ SÜREYİ DAĞIT
     for (var sibling in remainingSiblings) {
@@ -2149,26 +2160,17 @@ class _HomeScreenState extends State<HomeScreen>
       final elapsedTime = DateTime.now().difference(sibling.entryTime);
 
       // Yeni toplam süre = geçen süre + kişi başı kalan süre
-      final totalDurationSeconds = elapsedTime.inSeconds + perChildSeconds;
-      final newDurationMinutes = totalDurationSeconds ~/ 60;
+      final newTotalSeconds = elapsedTime.inSeconds + perChildSeconds;
 
-      // Duraklatma bilgilerini koru ve childCount'ı güncelle
-      final updatedCustomer = Customer(
-        id: sibling.id,
-        childName: sibling.childName,
-        parentName: sibling.parentName,
-        phoneNumber: sibling.phoneNumber,
-        entryTime: sibling.entryTime,
-        durationMinutes: newDurationMinutes,
-        ticketNumber: sibling.ticketNumber,
-        childCount: remainingSiblings.length, // Kalan çocuk sayısını güncelle
-        isPaused: sibling.isPaused,
-        pauseTime: sibling.pauseTime,
-        pausedDuration: sibling.pausedDuration,
+      // YENİ SİSTEM - Customer güncelleme
+      final updatedCustomer = sibling.copyWith(
+        totalSeconds: newTotalSeconds,
+        childCount: remainingSiblings.length,
+        siblingIds: remainingSiblings.map((s) => s.id).toList(),
       );
       
       // Debug: Güncellenen müşteri bilgilerini log'la
-      print('DEBUG: ${sibling.childName} güncellendi - Yeni süre: $newDurationMinutes dk, Yeni childCount: ${remainingSiblings.length}');
+      print('DEBUG: ${sibling.childName} güncellendi - Yeni toplam süre: $newTotalSeconds saniye, Yeni childCount: ${remainingSiblings.length}');
 
       widget.customerRepository.updateCustomer(updatedCustomer);
     }
@@ -2425,7 +2427,7 @@ class _HomeScreenState extends State<HomeScreen>
                                     ),
                                   ),
                                   Text(
-                                    '${sibling.explicitRemainingMinutes ?? sibling.remainingTime.inMinutes} dk',
+                                    '${sibling.currentRemainingSecondsPerChild ~/ 60} dk',
                                     style: TextStyle(
                                       fontSize: 14,
                                       fontWeight: FontWeight.w500,
@@ -2583,27 +2585,24 @@ class _HomeScreenState extends State<HomeScreen>
 
                   if (isPaused) {
                     // Devam ettirme - duraklatma süresini hesapla
-                    if (sibling.pauseTime != null) {
+                    if (sibling.pauseStartTime != null) {
                       final pauseDuration = DateTime.now().difference(
-                        sibling.pauseTime!,
+                        sibling.pauseStartTime!,
                       );
                       // Önceki duraklatmalardan gelen sürelerle topla
-                      newPausedDuration =
-                          (sibling.pausedDuration ?? Duration.zero) +
-                          pauseDuration;
+                      newPausedDuration = Duration(seconds: sibling.pausedSeconds + pauseDuration.inSeconds);
                     }
-                    newPauseTime =
-                        null; // Devam ettirince duraklatma zamanı silinir
+                    newPauseTime = null; // Devam ettirince duraklatma zamanı silinir
                   } else {
                     // Duraklatma - şu anki zamanı kaydet
                     newPauseTime = DateTime.now();
-                    newPausedDuration = sibling.pausedDuration; // Değişmez
+                    newPausedDuration = Duration(seconds: sibling.pausedSeconds); // Değişmez
                   }
 
                   final updatedCustomer = sibling.copyWith(
                     isPaused: !isPaused,
-                    pauseTime: newPauseTime,
-                    pausedDuration: newPausedDuration,
+                    pauseStartTime: newPauseTime,
+                    pausedSeconds: newPausedDuration?.inSeconds ?? sibling.pausedSeconds,
                   );
 
                   widget.customerRepository.updateCustomer(updatedCustomer);
@@ -2641,6 +2640,61 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
 
+
+  // Profil ekranındaki satışları güncelle
+  void _notifySalesUpdate() {
+    try {
+      // ProfileScreen'deki static metodu çağır
+      // Bu import edilmeli ama şimdilik sadece log
+      print('📊 Satış güncellemesi bildirildi - Profil ekranı güncellenmeli');
+    } catch (e) {
+      print('Satış güncellemesi bildirilirken hata: $e');
+    }
+  }
+
+  // Süre satın alma satış kaydı oluştur
+  Future<void> _createTimePurchaseSaleRecord(Customer customer, int additionalMinutes, int siblingCount, double pricePerMinute) async {
+    try {
+      final firebaseUser = FirebaseAuth.instance.currentUser;
+      if (firebaseUser == null) return;
+
+      // Süre satın alma fiyatını hesapla
+      final double totalAmount = pricePerMinute * siblingCount;
+
+      final saleRecord = SaleRecord(
+        id: '', // Firestore otomatik oluşturacak
+        userId: firebaseUser.uid,
+        userName: firebaseUser.displayName ?? firebaseUser.email?.split('@')[0] ?? 'Kullanıcı',
+        customerName: customer.childName,
+        amount: totalAmount,
+        description: 'Süre Satın Alma - ${additionalMinutes} dakika ${siblingCount > 1 ? '($siblingCount çocuk)' : ''}',
+        date: DateTime.now(),
+        customerPhone: customer.phoneNumber,
+        customerEmail: null,
+        items: ['Süre Satın Alma - ${additionalMinutes} dakika'],
+        paymentMethod: 'Nakit',
+        status: 'Tamamlandı',
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      );
+
+      final result = await _saleService.createSale(saleRecord);
+      if (result != null) {
+        print('✅ Süre satın alma satış kaydı oluşturuldu: ${customer.childName}');
+        print('   - Tutar: ${totalAmount}₺');
+        print('   - Süre: ${additionalMinutes} dakika');
+        print('   - Çocuk sayısı: $siblingCount');
+        print('   - Satış ID: ${result.id}');
+        
+        // Profil ekranındaki satışları güncelle
+        _notifySalesUpdate();
+      } else {
+        print('❌ Süre satın alma satış kaydı oluşturulamadı');
+      }
+    } catch (e) {
+      print('Süre satın alma satış kaydı oluşturulurken hata: $e');
+    }
+  }
 
   // Müşteri filtreleme fonksiyonu
   List<Customer> _filterCustomers(List<Customer> customers, String query) {

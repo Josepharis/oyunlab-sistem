@@ -458,9 +458,11 @@ class FirebaseService {
 
         // Süre bittiyse otomatik tamamla
         if (exitTime.isBefore(now)) {
-          final usedDuration = exitTime.difference(entryTime);
-          final usedMinutes = usedDuration.inMinutes;
-          final usedSeconds = usedDuration.inSeconds % 60;
+          // KALAN SÜRE BAZLI: Süre bitti, kalan süre 0
+          final totalSeconds = durationMinutes * 60;
+          final usedTotalSeconds = totalSeconds; // Tüm süre kullanıldı
+          final usedMinutes = usedTotalSeconds ~/ 60;
+          final usedSeconds = usedTotalSeconds % 60;
           
           await _customersCollection.doc(doc.id).update({
             'isActive': false,
@@ -504,41 +506,36 @@ class FirebaseService {
       // Belge varsa güncelle
       final customerData = docSnapshot.data()!;
       
-      // Teslim edildiği andaki kullanılan ve kalan süreyi hesapla (saniye duyarlı)
-      final entryTime = DateTime.parse(customerData['entryTime'] as String);
-      final durationMinutes = customerData['durationMinutes'] as int? ?? 60;
-      final now = DateTime.now();
+      // KALAN SÜRE BAZLI SİSTEM: Teslim edildiği andaki kalan süreyi al
+      final customer = Customer.fromJson({...customerData, 'id': id});
+      final currentRemainingSeconds = customer.currentRemainingSeconds;
       
-      // Kullanılan süreyi hesapla (giriş zamanından şu ana kadar, saniye duyarlı)
-      final usedDuration = now.difference(entryTime);
-      final usedMinutes = usedDuration.inMinutes;
-      final usedSeconds = usedDuration.inSeconds % 60;
+      // Kalan süreyi kaydet (çocuk sayısı ile çarpılmış toplam kalan süre)
+      final totalRemainingSeconds = currentRemainingSeconds;
+      final totalRemainingMinutes = totalRemainingSeconds ~/ 60;
+      final totalRemainingSecondsOnly = totalRemainingSeconds % 60;
       
-      // Kalan süreyi hesapla (saniye duyarlı)
-      // Müşteri teslim edildiğinde kalan süre 0 olur
-      final exitTime = entryTime.add(Duration(minutes: durationMinutes));
-      int remainingMinutes = 0;
-      int remainingSeconds = 0;
+      // Kullanılan süreyi hesapla (toplam süre - kalan süre)
+      final totalSeconds = customer.totalSeconds;
+      final usedTotalSeconds = totalSeconds - totalRemainingSeconds;
+      final usedMinutes = usedTotalSeconds ~/ 60;
+      final usedSeconds = usedTotalSeconds % 60;
       
-      // Eğer süre henüz bitmemişse, kalan süreyi hesapla
-      if (exitTime.isAfter(now)) {
-        final remainingDuration = exitTime.difference(now);
-        remainingMinutes = remainingDuration.inMinutes;
-        remainingSeconds = remainingDuration.inSeconds % 60;
+      // Giriş ücreti satış kaydı oluştur (eğer ücret varsa)
+      final double entryFee = (customerData['price'] as num?)?.toDouble() ?? 0.0;
+      if (entryFee > 0) {
+        await _createEntryFeeSaleRecord(customer, entryFee);
       }
-      // Eğer süre bitmişse veya teslim ediliyorsa, kalan süre 0 olur
-      
-
       
       await _customersCollection.doc(id).update({
         'isActive': false,
         'isCompleted': true,
         'completedTime': FieldValue.serverTimestamp(),
         'exitTime': FieldValue.serverTimestamp(),
-        'remainingMinutes': remainingMinutes, // Teslim edildiği andaki kalan süre
-        'remainingSeconds': remainingSeconds, // Kalan süre saniye
-        'explicitRemainingMinutes': remainingMinutes, // Model için aynı değer
-        'explicitRemainingSeconds': remainingSeconds, // Model için saniye
+        'remainingMinutes': totalRemainingMinutes, // Teslim edildiği andaki TOPLAM kalan süre
+        'remainingSeconds': totalRemainingSecondsOnly, // TOPLAM kalan süre saniye
+        'explicitRemainingMinutes': totalRemainingMinutes, // Model için aynı değer
+        'explicitRemainingSeconds': totalRemainingSecondsOnly, // Model için saniye
         'usedMinutes': usedMinutes, // Teslim edildiği andaki kullanılan süre
         'usedSeconds': usedSeconds, // Kullanılan süre saniye
       });
@@ -573,6 +570,38 @@ class FirebaseService {
       } else {
         rethrow;
       }
+    }
+  }
+
+
+
+  // Giriş ücreti satış kaydı oluştur
+  Future<void> _createEntryFeeSaleRecord(Customer customer, double entryFee) async {
+    try {
+      final firebaseUser = _auth.currentUser;
+      if (firebaseUser == null) return;
+
+      // SaleService'i import etmek yerine doğrudan Firestore'a yaz
+      final saleRecord = {
+        'userId': firebaseUser.uid,
+        'userName': firebaseUser.displayName ?? firebaseUser.email?.split('@')[0] ?? 'Kullanıcı',
+        'customerName': customer.childName,
+        'amount': entryFee,
+        'description': 'Giriş Ücreti - ${customer.totalSeconds ~/ 60} dakika',
+        'date': FieldValue.serverTimestamp(),
+        'customerPhone': customer.phoneNumber,
+        'customerEmail': null,
+        'items': ['Giriş Ücreti - ${customer.totalSeconds ~/ 60} dakika'],
+        'paymentMethod': 'Nakit',
+        'status': 'Tamamlandı',
+        'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      };
+
+      await _firestore.collection('sales').add(saleRecord);
+      print('✅ Giriş ücreti satış kaydı oluşturuldu: ${customer.childName} - ${entryFee}₺');
+    } catch (e) {
+      print('Giriş ücreti satış kaydı oluşturulurken hata: $e');
     }
   }
 

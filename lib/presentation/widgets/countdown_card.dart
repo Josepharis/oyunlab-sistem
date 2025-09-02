@@ -2,7 +2,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../data/models/customer_model.dart';
-import '../../core/theme/app_theme.dart';
 
 class CountdownCard extends StatefulWidget {
   final Customer customer;
@@ -30,10 +29,10 @@ class _CountdownCardState extends State<CountdownCard>
   @override
   void initState() {
     super.initState();
-    _remainingTime = widget.customer.activeRemainingTime;
+    _remainingTime = _calculateRemainingTime();
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
       setState(() {
-        _remainingTime = widget.customer.activeRemainingTime;
+        _remainingTime = _calculateRemainingTime();
       });
     });
 
@@ -50,10 +49,38 @@ class _CountdownCardState extends State<CountdownCard>
   }
 
   @override
+  void didUpdateWidget(CountdownCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Müşteri verisi değiştiğinde hemen güncelle
+    if (oldWidget.customer.id != widget.customer.id ||
+        oldWidget.customer.childCount != widget.customer.childCount ||
+        oldWidget.customer.totalSeconds != widget.customer.totalSeconds ||
+        oldWidget.customer.usedSeconds != widget.customer.usedSeconds ||
+        oldWidget.customer.pausedSeconds != widget.customer.pausedSeconds) {
+      // Timer'ı yeniden başlatmak yerine sadece hemen güncelle
+      setState(() {
+        _remainingTime = _calculateRemainingTime();
+      });
+    }
+  }
+
+  @override
   void dispose() {
     _timer.cancel();
     _animationController.dispose();
     super.dispose();
+  }
+
+  // Gerçek zamanlı kalan süre hesaplama
+  Duration _calculateRemainingTime() {
+    if (widget.customer.isCompleted) {
+      return Duration.zero;
+    }
+
+    // YENİ SİSTEM - Customer model'deki getter'ları kullan
+    final remainingSecondsPerChild = widget.customer.currentRemainingSecondsPerChild;
+    
+    return Duration(seconds: remainingSecondsPerChild > 0 ? remainingSecondsPerChild : 0);
   }
 
   Color _getStatusColor() {
@@ -62,7 +89,9 @@ class _CountdownCardState extends State<CountdownCard>
       return Colors.grey.shade600;
     }
     
-    final progress = _remainingTime.inMinutes / widget.customer.durationMinutes;
+    // Çocuk başına düşen toplam süre
+    final totalSecondsPerChild = widget.customer.totalSeconds ~/ widget.customer.childCount;
+    final progress = _remainingTime.inSeconds / totalSecondsPerChild;
 
     if (progress > 0.5) {
       return Colors.green.shade600;

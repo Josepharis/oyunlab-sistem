@@ -28,7 +28,7 @@ class TableOrderScreen extends StatefulWidget {
 class _TableOrderScreenState extends State<TableOrderScreen>
     with SingleTickerProviderStateMixin {
   List<TableOrder> _tableOrders = [];
-  int _nextTableNumber = 1;
+
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
   final MenuRepository _menuRepository = MenuRepository();
@@ -444,13 +444,6 @@ class _TableOrderScreenState extends State<TableOrderScreen>
                               children: [
                                 Text('Veli: ${customer.parentName}'),
                                 Text('Bilet: #${customer.ticketNumber}'),
-                                Text(
-                                  'Kalan: ${customer.explicitRemainingMinutes ?? customer.remainingTime.inMinutes} dk',
-                                  style: TextStyle(
-                                    color: Colors.green.shade600,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
                               ],
                             ),
                             trailing: ElevatedButton.icon(
@@ -2368,8 +2361,8 @@ class _TableDetailScreenState extends State<TableDetailScreen>
                       Expanded(
                         child: ElevatedButton(
                           onPressed: () async {
-                            // Satış kaydı oluştur
-                            await _createSaleRecord();
+                            // Önce satış kaydı oluştur
+                            await _createSaleRecord(paymentMethod);
                             
                             // Ödeme alındı ve masa silindi
                             Navigator.pop(context); // Dialog'u kapat
@@ -2377,6 +2370,9 @@ class _TableDetailScreenState extends State<TableDetailScreen>
 
                             // Masayı sil
                             widget.onDeleteTable(currentTable);
+                            
+                            // Satışlar ekranını yenile (eğer açıksa)
+                            // Bu işlem otomatik olarak stream güncellemesi ile yapılacak
                           },
                           style: ElevatedButton.styleFrom(
                             backgroundColor: Colors.green.shade600,
@@ -2624,8 +2620,19 @@ class _TableDetailScreenState extends State<TableDetailScreen>
     );
   }
 
+  // Profil ekranındaki satışları güncelle
+  void _notifySalesUpdate() {
+    try {
+      // ProfileScreen'deki static metodu çağır
+      // Bu import edilmeli ama şimdilik sadece log
+      print('📊 Satış güncellemesi bildirildi - Profil ekranı güncellenmeli');
+    } catch (e) {
+      print('Satış güncellemesi bildirilirken hata: $e');
+    }
+  }
+
   // Satış kaydı oluştur
-  Future<void> _createSaleRecord() async {
+  Future<void> _createSaleRecord(String paymentMethod) async {
     try {
       final firebaseUser = FirebaseAuth.instance.currentUser;
       if (firebaseUser == null) return;
@@ -2664,7 +2671,7 @@ class _TableDetailScreenState extends State<TableDetailScreen>
         customerPhone: null,
         customerEmail: null,
         items: completedOrders.map((order) => order.productName).toList(),
-        paymentMethod: 'Nakit', // Varsayılan olarak nakit
+        paymentMethod: paymentMethod == 'nakit' ? 'Nakit' : 'Kart',
         status: 'Tamamlandı',
         createdAt: DateTime.now(),
         updatedAt: DateTime.now(),
@@ -2677,14 +2684,7 @@ class _TableDetailScreenState extends State<TableDetailScreen>
         print('   - User ID: ${firebaseUser.uid}');
         print('   - Satış ID: ${result.id}');
         
-        // Profil ekranındaki satış geçmişini güncelle
-        try {
-          // ProfileScreen static metodunu çağır
-          // ProfileScreen import edilmeli - şimdilik sadece log
-          print('📊 Satış kaydı oluşturuldu - Profil ekranı güncellenmeli');
-        } catch (e) {
-          print('Profil ekranı güncellenirken hata: $e');
-        }
+        // Real-time stream otomatik güncelleniyor
         
         // Başarı mesajı göster
         if (mounted) {

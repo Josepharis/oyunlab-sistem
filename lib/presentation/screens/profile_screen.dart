@@ -35,7 +35,8 @@ class _ProfileScreenState extends State<ProfileScreen>
   Timer? _shiftTimer;
   ShiftRecord? _activeShift;
   
-  // Satış geçmişi artık otomatik yenilenmeyecek
+  // Satış geçmişi real-time stream
+  StreamSubscription<List<SaleRecord>>? _salesStreamSubscription;
 
   // Satış verileri
   List<SaleRecord> _salesHistory = [];
@@ -72,13 +73,8 @@ class _ProfileScreenState extends State<ProfileScreen>
       _updateUserInfo();
     });
     
-    // Satış geçmişi artık otomatik yenilenmeyecek - sadece gerektiğinde güncellenecek
-    // Callback sistemi kurulumu
-    setOnSalesUpdateCallback(() {
-      if (mounted) {
-        _loadSalesHistory();
-      }
-    });
+    // Real-time satış stream'ini başlat
+    _startSalesStream();
   }
 
   // Kullanıcı bilgilerini güncelle ve verileri yükle
@@ -151,8 +147,8 @@ class _ProfileScreenState extends State<ProfileScreen>
       // Mesai geçmişini yükle
       await _loadShiftHistory();
       
-      // Satış geçmişini yükle
-      await _loadSalesHistory();
+      // Satış stream'ini yeniden başlat (kullanıcı değiştiyse)
+      _startSalesStream();
       
     } catch (e) {
       print('Veriler yüklenirken hata: $e');
@@ -218,42 +214,41 @@ class _ProfileScreenState extends State<ProfileScreen>
     }
   }
 
-  // Satış geçmişini yükle (public metod)
+  // Satış geçmişini yükle (public metod) - artık gerekli değil, stream kullanıyoruz
   Future<void> refreshSalesHistory() async {
-    await _loadSalesHistory();
+    // Stream otomatik güncelleniyor, manuel yenileme gerekmiyor
   }
 
-  // Global callback sistemi için static metod
-  static Function()? _onSalesUpdate;
-  
-  static void setOnSalesUpdateCallback(Function() callback) {
-    _onSalesUpdate = callback;
-  }
-  
-  static void notifySalesUpdate() {
-    _onSalesUpdate?.call();
-  }
-
-  // Satış geçmişini yükle
-  Future<void> _loadSalesHistory() async {
+  // Real-time satış stream'ini başlat
+  void _startSalesStream() {
     if (_staffId.isEmpty) return;
+
+    // Önceki stream'i iptal et
+    _salesStreamSubscription?.cancel();
 
     setState(() {
       _isLoadingSales = true;
     });
 
-    try {
-      final sales = await _saleService.getUserSales(_staffId, limit: 50);
-      setState(() {
-        _salesHistory = sales;
-      });
-    } catch (e) {
-      print('Satış geçmişi yüklenirken hata: $e');
-    } finally {
-      setState(() {
-        _isLoadingSales = false;
-      });
-    }
+    // Yeni stream'i başlat
+    _salesStreamSubscription = _saleService.getUserSalesStream(_staffId, limit: 50).listen(
+      (sales) {
+        if (mounted) {
+          setState(() {
+            _salesHistory = sales;
+            _isLoadingSales = false;
+          });
+        }
+      },
+      onError: (error) {
+        print('Satış stream hatası: $error');
+        if (mounted) {
+          setState(() {
+            _isLoadingSales = false;
+          });
+        }
+      },
+    );
   }
 
   // Mesai timer'ını başlat
@@ -268,10 +263,13 @@ class _ProfileScreenState extends State<ProfileScreen>
     });
   }
 
+
+
   @override
   void dispose() {
     _tabController.dispose();
     _shiftTimer?.cancel();
+    _salesStreamSubscription?.cancel();
     super.dispose();
   }
 
@@ -505,8 +503,7 @@ class _ProfileScreenState extends State<ProfileScreen>
       final result = await _saleService.updateSale(updatedSale);
 
       if (result != null) {
-        // Satış geçmişini yenile
-        await _loadSalesHistory();
+        // Stream otomatik güncelleniyor, manuel yenileme gerekmiyor
 
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -547,8 +544,7 @@ class _ProfileScreenState extends State<ProfileScreen>
       final success = await _saleService.deleteSale(sale.id);
 
       if (success) {
-        // Satış geçmişini yenile
-        await _loadSalesHistory();
+        // Stream otomatik güncelleniyor, manuel yenileme gerekmiyor
 
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -753,7 +749,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                       // Toplam satış
                       Expanded(
                         child: _buildSummaryCard(
-                          icon: Icons.monetization_on_outlined,
+                          icon: Icons.child_care,
                           iconColor: Colors.green.shade700,
                           title: 'Toplam Satış',
                           value: _isLoadingSales 
@@ -2674,30 +2670,104 @@ class _ProfileScreenState extends State<ProfileScreen>
 
   // Satış tipine göre ikon
   IconData _getSaleTypeIcon(SaleRecord sale) {
-    // Masa siparişi için her zaman yemek ikonu
+    // Masa siparişi için turuncu tema ile uyumlu ikon
     if (sale.description.toLowerCase().contains('masa') || 
         sale.description.toLowerCase().contains('sipariş') ||
         sale.description.toLowerCase().contains('pasta') ||
         sale.description.toLowerCase().contains('içecek') ||
-        sale.description.toLowerCase().contains('yemek')) {
-      return Icons.restaurant;
-    } else if (sale.description.toLowerCase().contains('oyun') || 
-               sale.description.toLowerCase().contains('giriş')) {
-      return Icons.games;
+        sale.description.toLowerCase().contains('yemek') ||
+        sale.description.toLowerCase().contains('restoran') ||
+        sale.description.toLowerCase().contains('cafe') ||
+        sale.description.toLowerCase().contains('kahve') ||
+        sale.description.toLowerCase().contains('çay') ||
+        sale.description.toLowerCase().contains('kek') ||
+        sale.description.toLowerCase().contains('börek') ||
+        sale.description.toLowerCase().contains('sandwich') ||
+        sale.description.toLowerCase().contains('burger') ||
+        sale.description.toLowerCase().contains('pizza') ||
+        sale.description.toLowerCase().contains('salata') ||
+        sale.description.toLowerCase().contains('soup') ||
+        sale.description.toLowerCase().contains('çorba') ||
+        sale.description.toLowerCase().contains('su') ||
+        sale.description.toLowerCase().contains('cola') ||
+        sale.description.toLowerCase().contains('fanta') ||
+        sale.description.toLowerCase().contains('ayran') ||
+        sale.description.toLowerCase().contains('meyve suyu') ||
+        sale.description.toLowerCase().contains('smoothie') ||
+        sale.description.toLowerCase().contains('milkshake') ||
+        sale.description.toLowerCase().contains('dondurma') ||
+        sale.description.toLowerCase().contains('tatlı') ||
+        sale.description.toLowerCase().contains('dessert') ||
+        sale.description.toLowerCase().contains('snack') ||
+        sale.description.toLowerCase().contains('atıştırmalık') ||
+        sale.description.toLowerCase().contains('menü') ||
+        sale.description.toLowerCase().contains('menu') ||
+        sale.description.toLowerCase().contains('combo') ||
+        sale.description.toLowerCase().contains('set') ||
+        sale.description.toLowerCase().contains('paket') ||
+        sale.description.toLowerCase().contains('paket') ||
+        sale.description.toLowerCase().contains('tabak') ||
+        sale.description.toLowerCase().contains('bardak') ||
+        sale.description.toLowerCase().contains('kase') ||
+        sale.description.toLowerCase().contains('porsiyon') ||
+        sale.description.toLowerCase().contains('adet') ||
+        sale.description.toLowerCase().contains('x') ||
+        sale.description.toLowerCase().contains('×')) {
+      return Icons.restaurant_menu; // Turuncu tema ile uyumlu restoran ikonu
+    } else {
+      // Tüm oyun alanı satışları için tek ikon
+      return Icons.child_care;
     }
-    return Icons.payment;
   }
 
   // Satış tipine göre renk
   Color _getSaleTypeColor(SaleRecord sale) {
     if (sale.description.toLowerCase().contains('masa') || 
-        sale.description.toLowerCase().contains('sipariş')) {
+        sale.description.toLowerCase().contains('sipariş') ||
+        sale.description.toLowerCase().contains('pasta') ||
+        sale.description.toLowerCase().contains('içecek') ||
+        sale.description.toLowerCase().contains('yemek') ||
+        sale.description.toLowerCase().contains('restoran') ||
+        sale.description.toLowerCase().contains('cafe') ||
+        sale.description.toLowerCase().contains('kahve') ||
+        sale.description.toLowerCase().contains('çay') ||
+        sale.description.toLowerCase().contains('kek') ||
+        sale.description.toLowerCase().contains('börek') ||
+        sale.description.toLowerCase().contains('sandwich') ||
+        sale.description.toLowerCase().contains('burger') ||
+        sale.description.toLowerCase().contains('pizza') ||
+        sale.description.toLowerCase().contains('salata') ||
+        sale.description.toLowerCase().contains('soup') ||
+        sale.description.toLowerCase().contains('çorba') ||
+        sale.description.toLowerCase().contains('su') ||
+        sale.description.toLowerCase().contains('cola') ||
+        sale.description.toLowerCase().contains('fanta') ||
+        sale.description.toLowerCase().contains('ayran') ||
+        sale.description.toLowerCase().contains('meyve suyu') ||
+        sale.description.toLowerCase().contains('smoothie') ||
+        sale.description.toLowerCase().contains('milkshake') ||
+        sale.description.toLowerCase().contains('dondurma') ||
+        sale.description.toLowerCase().contains('tatlı') ||
+        sale.description.toLowerCase().contains('dessert') ||
+        sale.description.toLowerCase().contains('snack') ||
+        sale.description.toLowerCase().contains('atıştırmalık') ||
+        sale.description.toLowerCase().contains('menü') ||
+        sale.description.toLowerCase().contains('menu') ||
+        sale.description.toLowerCase().contains('combo') ||
+        sale.description.toLowerCase().contains('set') ||
+        sale.description.toLowerCase().contains('paket') ||
+        sale.description.toLowerCase().contains('tabak') ||
+        sale.description.toLowerCase().contains('bardak') ||
+        sale.description.toLowerCase().contains('kase') ||
+        sale.description.toLowerCase().contains('porsiyon') ||
+        sale.description.toLowerCase().contains('adet') ||
+        sale.description.toLowerCase().contains('x') ||
+        sale.description.toLowerCase().contains('×')) {
       return Colors.orange.shade600;
-    } else if (sale.description.toLowerCase().contains('oyun') || 
-               sale.description.toLowerCase().contains('giriş')) {
+    } else {
+      // Tüm oyun alanı satışları için tek renk (mavi)
       return Colors.blue.shade600;
     }
-    return Colors.green.shade600;
   }
 
   // Ödeme yöntemi ikonu

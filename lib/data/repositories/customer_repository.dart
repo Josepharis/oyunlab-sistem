@@ -92,7 +92,8 @@ class CustomerRepository {
       if (list1[i].id != list2[i].id || 
           list1[i].remainingTime != list2[i].remainingTime ||
           list1[i].isCompleted != list2[i].isCompleted ||
-          list1[i].isActive != list2[i].isActive) {
+          list1[i].isActive != list2[i].isActive ||
+          list1[i].childCount != list2[i].childCount) {
         return false;
       }
     }
@@ -263,7 +264,7 @@ class CustomerRepository {
         final customer = _cachedCustomers[customerIndex];
         final updatedCustomer = customer.copyWith(
           isPaused: false,
-          pauseTime: null,
+          pauseStartTime: null,
         );
 
         // Önbelleği güncelle - aktif müşteriler arasından çıkar

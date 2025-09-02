@@ -37,15 +37,6 @@ class _SalesScreenState extends State<SalesScreen> {
   void initState() {
     super.initState();
     _loadCustomers();
-    
-    // Customer repository stream'ini dinle
-    widget.customerRepository.customersStream.listen((customers) {
-      if (mounted) {
-        setState(() {
-          _cachedCustomers = customers;
-        });
-      }
-    });
   }
 
   @override
@@ -141,8 +132,8 @@ class _SalesScreenState extends State<SalesScreen> {
         break;
       case 'çıkış_tarihi':
         customers.sort((a, b) {
-          final aExitTime = a.entryTime.add(a.initialTime);
-          final bExitTime = b.entryTime.add(b.initialTime);
+          final aExitTime = a.entryTime.add(Duration(seconds: a.totalSeconds));
+          final bExitTime = b.entryTime.add(Duration(seconds: b.totalSeconds));
           return _sortAscending
               ? aExitTime.compareTo(bExitTime)
               : bExitTime.compareTo(aExitTime);
@@ -152,8 +143,8 @@ class _SalesScreenState extends State<SalesScreen> {
         customers.sort(
           (a, b) =>
               _sortAscending
-                  ? a.initialTime.compareTo(b.initialTime)
-                  : b.initialTime.compareTo(a.initialTime),
+                  ? a.totalSeconds.compareTo(b.totalSeconds)
+                  : b.totalSeconds.compareTo(a.totalSeconds),
         );
         break;
       case 'bilet_no':
@@ -166,10 +157,13 @@ class _SalesScreenState extends State<SalesScreen> {
         break;
       case 'kalan_süre':
         customers.sort(
-          (a, b) =>
-              _sortAscending
-                  ? a.remainingTime.compareTo(b.remainingTime)
-                  : b.remainingTime.compareTo(a.remainingTime),
+          (a, b) {
+            final aRemaining = a.totalSeconds - a.staticRemainingSeconds;
+            final bRemaining = b.totalSeconds - b.staticRemainingSeconds;
+            return _sortAscending
+                ? aRemaining.compareTo(bRemaining)
+                : bRemaining.compareTo(aRemaining);
+          },
         );
         break;
     }
@@ -226,7 +220,8 @@ class _SalesScreenState extends State<SalesScreen> {
     int activeCount = 0;
     
     for (var customer in customers) {
-      if (!customer.isCompleted && customer.remainingTime.inSeconds > 0) {
+      final remainingSeconds = customer.totalSeconds - customer.staticRemainingSeconds;
+      if (!customer.isCompleted && remainingSeconds > 0) {
         activeCount += customer.childCount;
       }
     }
@@ -255,7 +250,7 @@ class _SalesScreenState extends State<SalesScreen> {
 
     final totalSeconds = customers.fold<int>(
       0,
-      (sum, customer) => sum + customer.initialTime.inSeconds,
+      (sum, customer) => sum + customer.totalSeconds,
     );
 
     return Duration(seconds: (totalSeconds / customers.length).round());
@@ -535,14 +530,15 @@ class _SalesScreenState extends State<SalesScreen> {
                         itemBuilder: (context, index) {
                           final customer = sortedCustomers[index];
 
-                          // Her müşteri için, toplam ve kalan süre
-                          final totalTime = customer.originalDurationMinutes > 0 
-                              ? Duration(minutes: customer.originalDurationMinutes) // Orijinal alınan süre
-                              : customer.initialTime; // Eski sistem için fallback
-                          final remainingTime = customer.remainingTime;
+                          // Her müşteri için, toplam süre
+                          final totalTime = Duration(seconds: customer.totalSeconds);
                           
-                          // Kullanılan süreyi al (sabit değer - akış yok)
-                          final usedDuration = customer.usedTime;
+                          // KALAN SÜRE BAZLI SİSTEM: Kalan süreyi al, kullanılanı hesapla
+                          final totalRemainingSeconds = customer.staticRemainingSeconds;
+                          final totalUsedSeconds = customer.totalSeconds - totalRemainingSeconds;
+                          
+                          final remainingTime = Duration(seconds: totalRemainingSeconds);
+                          final usedDuration = Duration(seconds: totalUsedSeconds);
                           
                           // Çıkış zamanı (tamamlanma zamanı varsa onu kullan, yoksa hesaplanan çıkış zamanı)
                           final actualExitTime = customer.isCompleted && customer.completedTime != null

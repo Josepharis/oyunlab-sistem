@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:uuid/uuid.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../../core/constants/app_constants.dart';
 import '../../data/models/customer_model.dart';
+import '../../data/models/sale_record_model.dart';
 import '../../core/theme/app_theme.dart';
 import '../../data/repositories/customer_repository.dart';
+import '../../data/services/sale_service.dart';
 import '../../core/di/service_locator.dart';
 import '../../data/models/business_settings_model.dart';
 import '../../data/repositories/business_settings_repository.dart';
@@ -41,9 +44,10 @@ class _NewCustomerFormState extends State<NewCustomerForm>
   // Repository referansları
   late CustomerRepository _customerRepository;
   late BusinessSettingsRepository _businessSettingsRepository;
+  final SaleService _saleService = SaleService();
 
   // İşletme ayarları
-  BusinessSettings? _oyunAlaniSettings;
+  // BusinessSettings? _oyunAlaniSettings;
   List<DurationPrice> _availableDurations = [];
   DurationPrice? _selectedDurationPrice;
 
@@ -109,7 +113,7 @@ class _NewCustomerFormState extends State<NewCustomerForm>
       
       if (settings != null) {
         setState(() {
-          _oyunAlaniSettings = settings;
+          // _oyunAlaniSettings = settings;
           _availableDurations = settings.durationPrices.where((dp) => dp.isActive).toList();
           
           // Varsayılan olarak ilk süreyi seç
@@ -242,23 +246,17 @@ class _NewCustomerFormState extends State<NewCustomerForm>
 
   // Yeni müşteri oluştur ve kaydet
   void _createNewCustomer() async {
-    // Kalan süre bilgisini hesapla
-    int finalDuration = _selectedDuration;
-    int? explicitRemainingSeconds;
-          if (_isUsingRemainingTime && _foundCustomer != null) {
+    // YENİ SÜRE SİSTEMİ - Toplam süre hesaplama
+    int totalSeconds = _selectedDuration * 60; // Dakikayı saniyeye çevir
+    
+    if (_isUsingRemainingTime && _foundCustomer != null) {
       if (_selectedDuration > 0) {
         // Kalan süreye ek süre ekle
-        int remainingSecs = _foundCustomer!.remainingTime.inSeconds;
-        int totalSeconds = (_selectedDuration * 60) + remainingSecs; // Toplam saniye
-        
-        // Toplam saniyeyi dakika ve saniyeye çevir
-        finalDuration = totalSeconds ~/ 60;
-        explicitRemainingSeconds = totalSeconds % 60;
+        int remainingSecs = _foundCustomer!.currentRemainingSeconds;
+        totalSeconds = (_selectedDuration * 60) + remainingSecs;
       } else {
         // Sadece kalan süreyi kullan
-        int remainingSecs = _foundCustomer!.remainingTime.inSeconds;
-        finalDuration = remainingSecs ~/ 60;
-        explicitRemainingSeconds = remainingSecs % 60;
+        totalSeconds = _foundCustomer!.currentRemainingSeconds;
       }
     }
 
@@ -284,17 +282,23 @@ class _NewCustomerFormState extends State<NewCustomerForm>
         childName: _childNameController.text.trim(),
         parentName: _parentNameController.text.trim(),
         phoneNumber: _phoneController.text.trim(),
-        entryTime: DateTime.now(), // Şu anki zamanı kullanıyoruz
-        durationMinutes: finalDuration, // Toplam süre (dakika)
+        entryTime: DateTime.now(),
         ticketNumber: ticketNumber,
-        price: _isUsingRemainingTime && _selectedDuration == 0 ? 0.0 : (_selectedDurationPrice?.price ?? 0.0), // Sadece kalan süre seçilirse 0, yoksa seçilen süre fiyatı
-        explicitRemainingMinutes: finalDuration, // Toplam süre (dakika)
-        explicitRemainingSeconds: explicitRemainingSeconds, // Kalan saniye
-        originalDurationMinutes: finalDuration, // Toplam süre (dakika)
+        totalSeconds: totalSeconds, // YENİ SİSTEM - Toplam süre saniye cinsinden
+        usedSeconds: 0, // Yeni müşteri için 0
+        pausedSeconds: 0, // Yeni müşteri için 0
+        price: _isUsingRemainingTime && _selectedDuration == 0 ? 0.0 : (_selectedDurationPrice?.price ?? 0.0),
+        childCount: 1, // Yeni müşteri için 1 çocuk
+        siblingIds: [], // Yeni müşteri için boş liste
       );
 
       // Kaydet
       widget.onSave(customer);
+
+      // Giriş ücreti satış kaydı oluştur (sadece yeni müşteri için ve ücret varsa)
+      if (!_isUsingRemainingTime || _selectedDuration > 0) {
+        await _createEntryFeeSaleRecord(customer);
+      }
 
       // İşlem tamam
       setState(() {
@@ -406,8 +410,8 @@ class _NewCustomerFormState extends State<NewCustomerForm>
       );
       print('Hesaplanan çıkış zamanı: ${latestCustomer.exitTime}');
       print('Duraklatılmış mı: ${latestCustomer.isPaused}');
-      print('Duraklatma zamanı: ${latestCustomer.pauseTime}');
-      print('Birikmiş duraklatma süresi: ${latestCustomer.pausedDuration}');
+      print('Duraklatma başlangıç zamanı: ${latestCustomer.pauseStartTime}');
+      print('Duraklatılan toplam süre: ${latestCustomer.pausedSeconds} saniye');
 
       // Formu güncelle
       setState(() {
@@ -435,15 +439,19 @@ class _NewCustomerFormState extends State<NewCustomerForm>
         print('Şu anki zaman: ${DateTime.now()}');
         print('RemainingTime objesi: $remainingTime');
 
-        // Eğer remainingSeconds > 0 ise müşterinin kalan süresi var
-        if (remainingSeconds > 0) {
+        // YENİ SİSTEM - Kalan süre hesaplama
+        final currentRemainingSeconds = latestCustomer.currentRemainingSeconds;
+        final currentRemainingMinutes = currentRemainingSeconds ~/ 60;
+        
+        // Eğer currentRemainingSeconds > 0 ise müşterinin kalan süresi var
+        if (currentRemainingSeconds > 0) {
           _isUsingRemainingTime = true;
           _selectedDuration = 0; // Varsayılan olarak sadece kalan süreyi kullan
 
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(
-                '${latestCustomer.childName} için kalan süre: $remainingMinutes dk',
+                '${latestCustomer.childName} için kalan süre: $currentRemainingMinutes dk',
               ),
               backgroundColor: Colors.green,
               duration: const Duration(seconds: 2),
@@ -1292,6 +1300,51 @@ class _NewCustomerFormState extends State<NewCustomerForm>
         ),
       ),
     );
+  }
+
+
+
+  // Giriş ücreti satış kaydı oluştur
+  Future<void> _createEntryFeeSaleRecord(Customer customer) async {
+    try {
+      final firebaseUser = FirebaseAuth.instance.currentUser;
+      if (firebaseUser == null) return;
+
+      // Giriş ücreti tutarını al
+      final double entryFee = customer.price;
+      if (entryFee <= 0) return; // Ücret yoksa satış kaydı oluşturma
+
+      final saleRecord = SaleRecord(
+        id: '', // Firestore otomatik oluşturacak
+        userId: firebaseUser.uid,
+        userName: firebaseUser.displayName ?? firebaseUser.email?.split('@')[0] ?? 'Kullanıcı',
+        customerName: customer.childName,
+        amount: entryFee,
+        description: 'Giriş Ücreti - ${customer.totalSeconds ~/ 60} dakika',
+        date: DateTime.now(),
+        customerPhone: customer.phoneNumber,
+        customerEmail: null,
+        items: ['Giriş Ücreti - ${customer.totalSeconds ~/ 60} dakika'],
+        paymentMethod: 'Nakit',
+        status: 'Tamamlandı',
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      );
+
+      final result = await _saleService.createSale(saleRecord);
+      if (result != null) {
+        print('✅ Giriş ücreti satış kaydı oluşturuldu: ${customer.childName}');
+        print('   - Tutar: ${entryFee}₺');
+        print('   - Süre: ${customer.totalSeconds ~/ 60} dakika');
+        print('   - Satış ID: ${result.id}');
+        
+        // Real-time stream otomatik güncelleniyor
+      } else {
+        print('❌ Giriş ücreti satış kaydı oluşturulamadı');
+      }
+    } catch (e) {
+      print('Giriş ücreti satış kaydı oluşturulurken hata: $e');
+    }
   }
 }
 
