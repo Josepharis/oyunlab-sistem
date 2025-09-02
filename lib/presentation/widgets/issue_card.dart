@@ -150,14 +150,12 @@ class IssueCard extends StatelessWidget {
 
   String _getCategoryText(IssueCategory category) {
     switch (category) {
-      case IssueCategory.equipment:
-        return 'Ekipman';
-      case IssueCategory.supplies:
-        return 'Malzeme';
-      case IssueCategory.maintenance:
-        return 'Bakım';
-      case IssueCategory.safety:
-        return 'Güvenlik';
+      case IssueCategory.cleaning:
+        return 'Temizlik';
+      case IssueCategory.cafe:
+        return 'Kafe';
+      case IssueCategory.playground:
+        return 'Oyun Alanı';
       case IssueCategory.other:
         return 'Diğer';
     }
@@ -165,14 +163,12 @@ class IssueCard extends StatelessWidget {
 
   Color _getCategoryColor(IssueCategory category) {
     switch (category) {
-      case IssueCategory.equipment:
+      case IssueCategory.cleaning:
         return Colors.blue;
-      case IssueCategory.supplies:
+      case IssueCategory.cafe:
         return Colors.orange;
-      case IssueCategory.maintenance:
-        return Colors.purple;
-      case IssueCategory.safety:
-        return Colors.red;
+      case IssueCategory.playground:
+        return Colors.green;
       case IssueCategory.other:
         return Colors.grey;
     }

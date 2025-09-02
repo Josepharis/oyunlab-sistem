@@ -17,7 +17,7 @@ class _CreateIssueDialogState extends State<CreateIssueDialog> {
   final _formKey = GlobalKey<FormState>();
   final _titleController = TextEditingController();
   final _descriptionController = TextEditingController();
-  IssueCategory _selectedCategory = IssueCategory.equipment;
+  IssueCategory _selectedCategory = IssueCategory.cleaning;
   IssuePriority _selectedPriority = IssuePriority.medium;
   bool _isLoading = false;
 
@@ -276,14 +276,12 @@ class _CreateIssueDialogState extends State<CreateIssueDialog> {
 
   String _getCategoryText(IssueCategory category) {
     switch (category) {
-      case IssueCategory.equipment:
-        return 'Ekipman';
-      case IssueCategory.supplies:
-        return 'Malzeme';
-      case IssueCategory.maintenance:
-        return 'Bakım';
-      case IssueCategory.safety:
-        return 'Güvenlik';
+      case IssueCategory.cleaning:
+        return 'Temizlik';
+      case IssueCategory.cafe:
+        return 'Kafe';
+      case IssueCategory.playground:
+        return 'Oyun Alanı';
       case IssueCategory.other:
         return 'Diğer';
     }
@@ -325,14 +323,12 @@ class _CreateIssueDialogState extends State<CreateIssueDialog> {
     });
 
     try {
-      await Future.delayed(const Duration(milliseconds: 500));
-
       final issue = Issue.create(
         title: _titleController.text.trim(),
         description: _descriptionController.text.trim(),
         category: _selectedCategory,
         priority: _selectedPriority,
-        createdBy: 'current_user_id',
+        createdBy: 'current_user_id', // TODO: Gerçek user ID kullanılacak
       );
 
       if (mounted) {

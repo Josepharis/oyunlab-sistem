@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../data/models/issue_model.dart';
+import '../../data/repositories/issue_repository.dart';
+import '../../core/di/service_locator.dart';
 import '../widgets/issue_card.dart';
 import '../widgets/create_issue_dialog.dart';
 
@@ -11,34 +13,51 @@ class IssuesTab extends StatefulWidget {
 }
 
 class _IssuesTabState extends State<IssuesTab> {
+  late IssueRepository _issueRepository;
   List<Issue> _issues = [];
   bool _isLoading = false;
 
   @override
   void initState() {
     super.initState();
-    _loadIssues();
+    _issueRepository = ServiceLocator.locator<IssueRepository>();
+    
+    // Widget'ın mounted olduğundan emin ol
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _loadIssues();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    super.dispose();
   }
 
   Future<void> _loadIssues() async {
+    // Widget mounted değilse işlemi durdur
+    if (!mounted) return;
+    
     setState(() {
       _isLoading = true;
     });
 
     try {
-      // TODO: IssueRepository implement edildikten sonra gerçek veriler kullanılacak
-      await Future.delayed(const Duration(milliseconds: 500));
-      final issues = _getMockIssues();
+      // Gerçek verileri IssueRepository'den al
+      final issues = await _issueRepository.getUnresolvedIssues();
+
+      // Widget hala mounted mı kontrol et
+      if (!mounted) return;
 
       setState(() {
         _issues = issues;
       });
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Eksikler yüklenirken hata: $e')),
-        );
-      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Eksikler yüklenirken hata: $e')),
+      );
     } finally {
       if (mounted) {
         setState(() {
@@ -48,83 +67,79 @@ class _IssuesTabState extends State<IssuesTab> {
     }
   }
 
-  List<Issue> _getMockIssues() {
-    return [
-      Issue.create(
-        title: 'Oyun alanı temizlik malzemesi',
-        description: 'Oyun alanı temizliği için gerekli malzemeler eksik',
-        category: IssueCategory.supplies,
-        priority: IssuePriority.high,
-        createdBy: 'Ahmet Yılmaz',
-      ).copyWith(
-        id: '1',
-        createdAt: DateTime.now().subtract(const Duration(hours: 2)),
-      ),
-      Issue.create(
-        title: 'Güvenlik ekipmanları kontrolü',
-        description: 'Güvenlik ekipmanlarının kontrol edilmesi gerekiyor',
-        category: IssueCategory.safety,
-        priority: IssuePriority.medium,
-        createdBy: 'Fatma Demir',
-      ).copyWith(
-        id: '2',
-        createdAt: DateTime.now().subtract(const Duration(hours: 1)),
-      ),
-      Issue.create(
-        title: 'Bakım planı yapılmalı',
-        description: 'Düzenli bakım planı oluşturulması gerekiyor',
-        category: IssueCategory.maintenance,
-        priority: IssuePriority.low,
-        createdBy: 'Mehmet Kaya',
-      ).copyWith(
-        id: '3',
-        createdAt: DateTime.now().subtract(const Duration(minutes: 30)),
-      ),
-    ];
-  }
+
 
   Future<void> _createIssue() async {
     await showDialog(
       context: context,
       builder: (context) => CreateIssueDialog(
-        onIssueCreated: (Issue issue) {
-          setState(() {
-            _issues.insert(0, issue);
-          });
-          
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Eksik başarıyla eklendi')),
-          );
+        onIssueCreated: (Issue issue) async {
+          try {
+            // Eksik veritabanına kaydet
+            await _issueRepository.createIssue(issue);
+            
+            // Widget hala mounted mı kontrol et
+            if (!mounted) return;
+            
+            // Verileri yeniden yükle (Firebase'den güncel verileri al)
+            await _loadIssues();
+            
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Eksik başarıyla eklendi')),
+            );
+          } catch (e) {
+            if (!mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Eksik eklenirken hata: $e')),
+            );
+          }
         },
       ),
     );
   }
 
-  void _resolveIssue(Issue issue) {
-    setState(() {
-      final resolvedIssue = issue.copyWith(
-        isResolved: true,
-        resolvedAt: DateTime.now(),
-        resolvedBy: 'current_user_id',
-      );
+  void _resolveIssue(Issue issue) async {
+    try {
+      // Eksik veritabanında çöz
+      await _issueRepository.resolveIssue(issue.id, 'current_user_id'); // TODO: Gerçek user ID kullanılacak
       
-      _issues.remove(issue);
-      // Çözülen eksikler listeden kaldırılıyor
-    });
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Eksik çözüldü olarak işaretlendi')),
-    );
+      // Widget hala mounted mı kontrol et
+      if (!mounted) return;
+      
+      // Verileri yeniden yükle (Firebase'den güncel verileri al)
+      await _loadIssues();
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Eksik çözüldü olarak işaretlendi')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Eksik çözülürken hata: $e')),
+      );
+    }
   }
 
-  void _deleteIssue(Issue issue) {
-    setState(() {
-      _issues.remove(issue);
-    });
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Eksik silindi')),
-    );
+  void _deleteIssue(Issue issue) async {
+    try {
+      // Eksik veritabanından sil
+      await _issueRepository.deleteIssue(issue.id);
+      
+      // Widget hala mounted mı kontrol et
+      if (!mounted) return;
+      
+      // Verileri yeniden yükle (Firebase'den güncel verileri al)
+      await _loadIssues();
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Eksik silindi')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Eksik silinirken hata: $e')),
+      );
+    }
   }
 
   @override

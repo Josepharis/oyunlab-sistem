@@ -707,6 +707,10 @@ class FirebaseService {
   CollectionReference<Map<String, dynamic>> get _tasksCollection =>
       _firestore.collection('tasks');
 
+  // Issues koleksiyonu referansı
+  CollectionReference<Map<String, dynamic>> get _issuesCollection =>
+      _firestore.collection('issues');
+
   /// Tüm görevleri getir
   Future<List<Map<String, dynamic>>> getTasks() async {
     try {
@@ -895,6 +899,119 @@ class FirebaseService {
       print('FIREBASE_SERVICE: ${snapshot.docs.length} müşteri verisi ve daily_tickets silindi');
     } catch (e) {
       print('FIREBASE_SERVICE: Müşteri verileri silinirken hata: $e');
+    }
+  }
+
+  /// Tüm eksikleri getir
+  Future<List<Map<String, dynamic>>> getIssues() async {
+    try {
+      if (_isOfflineMode) {
+        print('FIREBASE_SERVICE: Çevrimdışı modda eksikler alınamadı');
+        return [];
+      }
+
+      if (_auth.currentUser == null) {
+        print('Eksikleri almak için kimlik doğrulaması gerekiyor');
+        return [];
+      }
+
+      final snapshot = await _issuesCollection
+          .orderBy('createdAt', descending: true)
+          .get();
+
+      return snapshot.docs
+          .map((doc) => {...doc.data(), 'id': doc.id})
+          .toList();
+    } catch (e) {
+      print('Eksikleri alırken hata: $e');
+      return [];
+    }
+  }
+
+  /// Belirli bir eksik getir
+  Future<Map<String, dynamic>?> getIssue(String issueId) async {
+    try {
+      if (_isOfflineMode) {
+        print('FIREBASE_SERVICE: Çevrimdışı modda eksik alınamadı');
+        return null;
+      }
+
+      if (_auth.currentUser == null) {
+        print('Eksik almak için kimlik doğrulaması gerekiyor');
+        return null;
+      }
+
+      final doc = await _issuesCollection.doc(issueId).get();
+      if (doc.exists) {
+        return {...doc.data()!, 'id': doc.id};
+      }
+      return null;
+    } catch (e) {
+      print('Eksik alırken hata: $e');
+      return null;
+    }
+  }
+
+  /// Yeni eksik ekle
+  Future<void> addIssue(Map<String, dynamic> issueData) async {
+    try {
+      if (_isOfflineMode) {
+        print('FIREBASE_SERVICE: Çevrimdışı modda eksik eklenemez');
+        return;
+      }
+
+      if (_auth.currentUser == null) {
+        print('Eksik eklemek için kimlik doğrulaması gerekiyor');
+        return;
+      }
+
+      await _issuesCollection.add(issueData);
+      print('FIREBASE_SERVICE: Eksik başarıyla eklendi');
+    } catch (e) {
+      print('FIREBASE_SERVICE: Eksik eklenirken hata: $e');
+      rethrow;
+    }
+  }
+
+  /// Eksik güncelle
+  Future<void> updateIssue(String issueId, Map<String, dynamic> issueData) async {
+    try {
+      if (_isOfflineMode) {
+        print('FIREBASE_SERVICE: Çevrimdışı modda eksik güncellenemez');
+        return;
+      }
+
+      if (_auth.currentUser == null) {
+        print('Eksik güncellemek için kimlik doğrulaması gerekiyor');
+        return;
+      }
+
+      await _issuesCollection.doc(issueId).update(issueData);
+      print('FIREBASE_SERVICE: Eksik başarıyla güncellendi');
+    } catch (e) {
+      print('FIREBASE_SERVICE: Eksik güncellenirken hata: $e');
+      rethrow;
+    }
+  }
+
+  /// Eksik sil
+  Future<void> deleteIssue(String issueId) async {
+    try {
+      if (_isOfflineMode) {
+        print('FIREBASE_SERVICE: Çevrimdışı modda eksik silinemez');
+        return;
+      }
+
+      if (_auth.currentUser == null) {
+        print('Eksik silmek için kimlik doğrulaması gerekiyor');
+        return;
+      }
+
+      await _issuesCollection.doc(issueId).delete();
+      print('FIREBASE_SERVICE: Eksik başarıyla silindi');
+    } catch (e) {
+      print('FIREBASE_SERVICE: Eksik silinirken hata: $e');
+      rethrow;
     }
   }
 }

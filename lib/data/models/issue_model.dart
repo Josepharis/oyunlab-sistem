@@ -1,4 +1,6 @@
-enum IssueCategory { equipment, supplies, maintenance, safety, other }
+import 'package:cloud_firestore/cloud_firestore.dart';
+
+enum IssueCategory { cleaning, cafe, playground, other }
 enum IssuePriority { low, medium, high, urgent }
 
 class Issue {
@@ -59,10 +61,10 @@ class Issue {
       'description': description,
       'category': category.name,
       'priority': priority.name,
-      'createdAt': createdAt.toIso8601String(),
+      'createdAt': Timestamp.fromDate(createdAt),
       'createdBy': createdBy,
       'isResolved': isResolved,
-      'resolvedAt': resolvedAt?.toIso8601String(),
+      'resolvedAt': resolvedAt != null ? Timestamp.fromDate(resolvedAt!) : null,
       'resolvedBy': resolvedBy,
     };
   }
@@ -81,12 +83,16 @@ class Issue {
         orElse: () => IssuePriority.medium,
       ),
       createdAt: json['createdAt'] != null
-          ? DateTime.parse(json['createdAt'])
+          ? (json['createdAt'] is Timestamp 
+              ? (json['createdAt'] as Timestamp).toDate()
+              : DateTime.parse(json['createdAt']))
           : DateTime.now(),
       createdBy: json['createdBy'] ?? '',
       isResolved: json['isResolved'] ?? false,
       resolvedAt: json['resolvedAt'] != null
-          ? DateTime.parse(json['resolvedAt'])
+          ? (json['resolvedAt'] is Timestamp 
+              ? (json['resolvedAt'] as Timestamp).toDate()
+              : DateTime.parse(json['resolvedAt']))
           : null,
       resolvedBy: json['resolvedBy'],
     );
