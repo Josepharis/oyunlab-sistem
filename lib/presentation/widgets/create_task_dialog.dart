@@ -474,8 +474,8 @@ class _CreateTaskDialogState extends State<CreateTaskDialog>
       );
 
       if (mounted) {
-        widget.onTaskCreated(task);
         Navigator.of(context).pop();
+        widget.onTaskCreated(task);
       }
     } catch (e) {
       if (mounted) {

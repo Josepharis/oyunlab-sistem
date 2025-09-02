@@ -1,6 +1,4 @@
 import 'package:flutter/material.dart';
-import '../../data/models/task_model.dart';
-import '../../data/repositories/task_repository.dart';
 
 class ComplaintDialog extends StatefulWidget {
   final String taskId;
@@ -19,6 +17,13 @@ class _ComplaintDialogState extends State<ComplaintDialog> {
   final _complaintController = TextEditingController();
   bool _isAnonymous = true;
   bool _isLoading = false;
+  ScaffoldMessengerState? _scaffoldMessenger;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _scaffoldMessenger = ScaffoldMessenger.of(context);
+  }
 
   @override
   void dispose() {
@@ -140,14 +145,12 @@ class _ComplaintDialogState extends State<ComplaintDialog> {
     });
 
     try {
-      final complaint = TaskComplaint.create(
-        complaintText: _complaintController.text.trim(),
-        isAnonymous: _isAnonymous,
-      );
-
-      // TaskRepository'i burada oluşturuyoruz (gerçek uygulamada dependency injection kullanılmalı)
+      // TODO: TaskRepository implement edildikten sonra gerçek veriler kullanılacak
+      // final complaint = TaskComplaint.create(
+      //   complaintText: _complaintController.text.trim(),
+      //   isAnonymous: _isAnonymous,
+      // );
       // final taskRepository = TaskRepository(FirebaseService());
-      
       // await taskRepository.addComplaint(widget.taskId, complaint);
 
       // Geçici olarak başarı mesajı gösteriyoruz
@@ -155,14 +158,14 @@ class _ComplaintDialogState extends State<ComplaintDialog> {
       
       Navigator.of(context).pop();
       
-      ScaffoldMessenger.of(context).showSnackBar(
+      _scaffoldMessenger?.showSnackBar(
         const SnackBar(
           content: Text('Şikayetiniz başarıyla gönderildi'),
           backgroundColor: Colors.green,
         ),
       );
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      _scaffoldMessenger?.showSnackBar(
         SnackBar(
           content: Text('Şikayet gönderilirken hata: $e'),
           backgroundColor: Colors.red,

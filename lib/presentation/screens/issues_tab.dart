@@ -16,6 +16,7 @@ class _IssuesTabState extends State<IssuesTab> {
   late IssueRepository _issueRepository;
   List<Issue> _issues = [];
   bool _isLoading = false;
+  ScaffoldMessengerState? _scaffoldMessenger;
 
   @override
   void initState() {
@@ -28,6 +29,12 @@ class _IssuesTabState extends State<IssuesTab> {
         _loadIssues();
       }
     });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _scaffoldMessenger = ScaffoldMessenger.of(context);
   }
 
   @override
@@ -55,9 +62,11 @@ class _IssuesTabState extends State<IssuesTab> {
       });
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Eksikler yüklenirken hata: $e')),
-      );
+      if (mounted) {
+        _scaffoldMessenger?.showSnackBar(
+          SnackBar(content: Text('Eksikler yüklenirken hata: $e')),
+        );
+      }
     } finally {
       if (mounted) {
         setState(() {
@@ -84,14 +93,18 @@ class _IssuesTabState extends State<IssuesTab> {
             // Verileri yeniden yükle (Firebase'den güncel verileri al)
             await _loadIssues();
             
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Eksik başarıyla eklendi')),
-            );
+            if (mounted) {
+              _scaffoldMessenger?.showSnackBar(
+                const SnackBar(content: Text('Eksik başarıyla eklendi')),
+              );
+            }
           } catch (e) {
             if (!mounted) return;
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('Eksik eklenirken hata: $e')),
-            );
+            if (mounted) {
+              _scaffoldMessenger?.showSnackBar(
+                SnackBar(content: Text('Eksik eklenirken hata: $e')),
+              );
+            }
           }
         },
       ),
@@ -109,14 +122,18 @@ class _IssuesTabState extends State<IssuesTab> {
       // Verileri yeniden yükle (Firebase'den güncel verileri al)
       await _loadIssues();
       
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Eksik çözüldü olarak işaretlendi')),
-      );
+      if (mounted) {
+        _scaffoldMessenger?.showSnackBar(
+          const SnackBar(content: Text('Eksik çözüldü olarak işaretlendi')),
+        );
+      }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Eksik çözülürken hata: $e')),
-      );
+      if (mounted) {
+        _scaffoldMessenger?.showSnackBar(
+          SnackBar(content: Text('Eksik çözülürken hata: $e')),
+        );
+      }
     }
   }
 
@@ -131,14 +148,18 @@ class _IssuesTabState extends State<IssuesTab> {
       // Verileri yeniden yükle (Firebase'den güncel verileri al)
       await _loadIssues();
       
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Eksik silindi')),
-      );
+      if (mounted) {
+        _scaffoldMessenger?.showSnackBar(
+          const SnackBar(content: Text('Eksik silindi')),
+        );
+      }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Eksik silinirken hata: $e')),
-      );
+      if (mounted) {
+        _scaffoldMessenger?.showSnackBar(
+          SnackBar(content: Text('Eksik silinirken hata: $e')),
+        );
+      }
     }
   }
 

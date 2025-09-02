@@ -725,7 +725,6 @@ class FirebaseService {
       }
 
       final snapshot = await _tasksCollection
-          .where('isActive', isEqualTo: true)
           .orderBy('createdAt', descending: true)
           .get();
 

@@ -27,6 +27,7 @@ class _CompleteTaskDialogState extends State<CompleteTaskDialog>
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
   late Animation<Offset> _slideAnimation;
+  ScaffoldMessengerState? _scaffoldMessenger;
 
   // Mock personel listesi
   final List<Staff> _availableStaff = [
@@ -77,6 +78,12 @@ class _CompleteTaskDialogState extends State<CompleteTaskDialog>
       _selectedStaffIds.add(_availableStaff.first.id);
     }
     _animationController.forward();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _scaffoldMessenger = ScaffoldMessenger.of(context);
   }
 
   @override
@@ -711,7 +718,7 @@ class _CompleteTaskDialogState extends State<CompleteTaskDialog>
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        _scaffoldMessenger?.showSnackBar(
           SnackBar(
             content: Text('Fotoğraf çekilirken hata: $e'),
             backgroundColor: Colors.red,
@@ -729,7 +736,7 @@ class _CompleteTaskDialogState extends State<CompleteTaskDialog>
 
   Future<void> _completeTask() async {
     if (_selectedImage == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      _scaffoldMessenger?.showSnackBar(
         const SnackBar(
           content: Text('Lütfen görev tamamlanma görseli seçin'),
           backgroundColor: Colors.red,
@@ -739,7 +746,7 @@ class _CompleteTaskDialogState extends State<CompleteTaskDialog>
     }
 
     if (_selectedStaffIds.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      _scaffoldMessenger?.showSnackBar(
         const SnackBar(
           content: Text('En az bir personel seçilmelidir'),
           backgroundColor: Colors.red,
@@ -764,7 +771,7 @@ class _CompleteTaskDialogState extends State<CompleteTaskDialog>
         Navigator.of(context).pop();
         widget.onTaskCompleted();
 
-        ScaffoldMessenger.of(context).showSnackBar(
+        _scaffoldMessenger?.showSnackBar(
           SnackBar(
             content: const Row(
               children: [
@@ -783,7 +790,7 @@ class _CompleteTaskDialogState extends State<CompleteTaskDialog>
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        _scaffoldMessenger?.showSnackBar(
           SnackBar(
             content: Text('Görev tamamlanırken hata: $e'),
             backgroundColor: Colors.red,

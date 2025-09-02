@@ -332,8 +332,8 @@ class _CreateIssueDialogState extends State<CreateIssueDialog> {
       );
 
       if (mounted) {
-        widget.onIssueCreated(issue);
         Navigator.of(context).pop();
+        widget.onIssueCreated(issue);
       }
     } catch (e) {
       if (mounted) {
