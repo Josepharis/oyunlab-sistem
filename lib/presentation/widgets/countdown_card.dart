@@ -7,11 +7,13 @@ import '../../core/theme/app_theme.dart';
 class CountdownCard extends StatefulWidget {
   final Customer customer;
   final VoidCallback? onTap;
+  final int childCount; // Çocuk sayısı
 
   const CountdownCard({
     super.key,
     required this.customer,
     this.onTap,
+    this.childCount = 1, // Varsayılan 1
   });
 
   @override
@@ -28,10 +30,10 @@ class _CountdownCardState extends State<CountdownCard>
   @override
   void initState() {
     super.initState();
-    _remainingTime = widget.customer.remainingTime;
+    _remainingTime = widget.customer.activeRemainingTime;
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
       setState(() {
-        _remainingTime = widget.customer.remainingTime;
+        _remainingTime = widget.customer.activeRemainingTime;
       });
     });
 
@@ -75,7 +77,12 @@ class _CountdownCardState extends State<CountdownCard>
     final hours = duration.inHours;
     final minutes = duration.inMinutes % 60;
     final seconds = duration.inSeconds % 60;
-    return '${hours > 0 ? '$hours:' : ''}${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+    
+    if (hours > 0) {
+      return '$hours:${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+    } else {
+      return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+    }
   }
 
   String _formatDateTime(DateTime time) {
@@ -105,7 +112,7 @@ class _CountdownCardState extends State<CountdownCard>
             GestureDetector(
               onTap: widget.onTap,
               child: Container(
-                height: 90,
+                height: 95, // 90'dan 95'e çıkarıldı
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(16),
@@ -182,6 +189,36 @@ class _CountdownCardState extends State<CountdownCard>
                                   ),
                                 ),
 
+                                // Bilet numarası - avatar'ın üstünde
+                                if (widget.customer.ticketNumber > 0)
+                                  Positioned(
+                                    top: -2,
+                                    right: -2,
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: Colors.orange.shade600,
+                                        borderRadius: BorderRadius.circular(8),
+                                        border: Border.all(color: Colors.white, width: 1.5),
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: Colors.black.withOpacity(0.2),
+                                            blurRadius: 2,
+                                            offset: const Offset(0, 1),
+                                          ),
+                                        ],
+                                      ),
+                                      child: Text(
+                                        '${widget.customer.ticketNumber}',
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+
                                 // Duraklatma göstergesi
                                 if (widget.customer.isPaused && !widget.customer.isCompleted)
                                   Positioned(
@@ -233,66 +270,46 @@ class _CountdownCardState extends State<CountdownCard>
                                           overflow: TextOverflow.ellipsis,
                                         ),
                                       ),
-                                      Container(
-                                        padding: EdgeInsets.symmetric(
-                                          horizontal: 4,
-                                          vertical: 2,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: widget.customer.isCompleted 
-                                              ? Colors.grey.shade200 
-                                              : Colors.grey.shade100,
-                                          borderRadius: BorderRadius.circular(4),
-                                        ),
-                                        child: Text(
-                                          '#${widget.customer.ticketNumber}',
-                                          style: TextStyle(
-                                            fontSize: 11,
-                                            color: widget.customer.isCompleted 
-                                                ? Colors.grey.shade500 
-                                                : Colors.grey.shade700,
-                                            fontWeight: FontWeight.w500,
-                                          ),
-                                        ),
-                                      ),
                                     ],
                                   ),
                                   SizedBox(height: 4),
+                                  // Veli adı - taşma olmasın
                                   Text(
                                     widget.customer.parentName,
                                     style: TextStyle(
                                       color: widget.customer.isCompleted 
-                                          ? Colors.grey.shade500 
-                                          : Colors.grey.shade700,
-                                      fontSize: 12,
+                                          ? Colors.grey.shade400 
+                                          : Colors.grey.shade600,
+                                      fontSize: 11,
                                     ),
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                   ),
                                   SizedBox(height: 2),
+                                  // Telefon numarası
                                   Row(
+                                    mainAxisSize: MainAxisSize.min,
                                     children: [
-                                      Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Icon(
-                                            Icons.phone_outlined,
-                                            size: 12,
+                                      Icon(
+                                        Icons.phone_outlined,
+                                        size: 12,
+                                        color: widget.customer.isCompleted 
+                                            ? Colors.grey.shade400 
+                                            : Colors.grey.shade600,
+                                      ),
+                                      SizedBox(width: 2),
+                                      Expanded(
+                                        child: Text(
+                                          widget.customer.phoneNumber,
+                                          style: TextStyle(
                                             color: widget.customer.isCompleted 
                                                 ? Colors.grey.shade400 
                                                 : Colors.grey.shade600,
+                                            fontSize: 11,
                                           ),
-                                          SizedBox(width: 2),
-                                          Text(
-                                            widget.customer.phoneNumber,
-                                            style: TextStyle(
-                                              color: widget.customer.isCompleted 
-                                                  ? Colors.grey.shade400 
-                                                  : Colors.grey.shade600,
-                                              fontSize: 11,
-                                            ),
-                                          ),
-                                        ],
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
                                       ),
                                     ],
                                   ),
@@ -423,6 +440,38 @@ class _CountdownCardState extends State<CountdownCard>
                                 ],
                               ],
                             ),
+                            
+                            // Kardeş sayısı göster (birden fazla varsa)
+                            if (widget.childCount > 1) ...[
+                              SizedBox(height: 4),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: Colors.orange.shade100,
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: Colors.orange.shade300, width: 1),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.people_outline,
+                                      size: 10,
+                                      color: Colors.orange.shade700,
+                                    ),
+                                    SizedBox(width: 2),
+                                    Text(
+                                      '${widget.childCount}',
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.orange.shade700,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
                           ],
                         ),
                       ),
@@ -443,14 +492,18 @@ class _CountdownCardState extends State<CountdownCard>
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(icon, size: 11, color: color),
-        SizedBox(width: 3),
-        Text(
-          text,
-          style: TextStyle(
-            fontSize: 11,
-            fontWeight: FontWeight.w500,
-            color: color,
+        Icon(icon, size: 10, color: color), // 11'den 10'a düşürüldü
+        SizedBox(width: 2), // 3'ten 2'ye düşürüldü
+        Flexible( // Flexible eklendi
+          child: Text(
+            text,
+            style: TextStyle(
+              fontSize: 10, // 11'den 10'a düşürüldü
+              fontWeight: FontWeight.w500,
+              color: color,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
           ),
         ),
       ],

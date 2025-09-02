@@ -103,7 +103,7 @@ class FirebaseService {
         return 100;
       }
 
-      print('FIREBASE_SERVICE: Son bilet numarası getiriliyor...');
+
 
       // Bugünün tarihini al
       final today = DateTime.now();
@@ -115,36 +115,35 @@ class FirebaseService {
 
       if (!doc.exists) {
         // Döküman yoksa oluştur
-        print(
-          'FIREBASE_SERVICE: Günlük bilet dökumanı bulunamadı, oluşturuluyor...',
-        );
         await docRef.set({
           'currentDate': todayKey,
           'lastTicketNumber': 100,
           'updatedAt': FieldValue.serverTimestamp(),
         });
+        print('FIREBASE_SERVICE: Yeni daily_tickets dökümanı oluşturuldu, 100\'den başlatıldı');
         return 100;
       }
 
       // Döküman varsa kontrol et
       final data = doc.data()!;
       final currentDate = data['currentDate'] as String? ?? '';
+      final lastTicketNumber = data['lastTicketNumber'] as int? ?? 100;
       
       // Eğer farklı günse, sayacı sıfırla
       if (currentDate != todayKey) {
-        print('FIREBASE_SERVICE: Yeni gün, bilet numarası 100\'den başlatılıyor');
-        await docRef.update({
+        await docRef.set({
           'currentDate': todayKey,
           'lastTicketNumber': 100,
           'updatedAt': FieldValue.serverTimestamp(),
         });
+        print('FIREBASE_SERVICE: Yeni gün başladı, bilet numarası 100\'e sıfırlandı');
         return 100;
       }
 
-      // Aynı günse son bilet numarasını al
-      final lastTicketNumber = data['lastTicketNumber'] as int? ?? 100;
-      print('FIREBASE_SERVICE: Bugünkü son bilet numarası: $lastTicketNumber');
+      // Aynı gün içindeyse mevcut son numarayı döndür
       return lastTicketNumber;
+
+
     } catch (e) {
       print('FIREBASE_SERVICE: Son bilet numarası alınırken hata: $e');
       return 100; // Hata durumunda varsayılan değer
@@ -170,7 +169,7 @@ class FirebaseService {
         return 100;
       }
 
-      print('FIREBASE_SERVICE: Bilet numarası arttırılıyor...');
+
 
       // Bugünün tarihini al
       final today = DateTime.now();
@@ -190,29 +189,30 @@ class FirebaseService {
           // Döküman yoksa oluştur
           transaction.set(docRef, {
             'currentDate': todayKey,
-            'lastTicketNumber': 101,
+            'lastTicketNumber': 101, // İlk bilet numarası 101 olacak
             'updatedAt': FieldValue.serverTimestamp(),
           });
+          print('FIREBASE_SERVICE: Transaction\'da yeni daily_tickets dökümanı oluşturuldu, 101 döndürülüyor');
           return 101;
         }
 
         // Döküman varsa kontrol et
         final data = doc.data()!;
         final currentDate = data['currentDate'] as String? ?? '';
+        final currentNumber = data['lastTicketNumber'] as int? ?? 100;
         
-        // Eğer farklı günse, sayacı 101'den başlat
+        // Eğer farklı günse, sayacı 100'den başlat ve 101'i döndür
         if (currentDate != todayKey) {
-          print('FIREBASE_SERVICE: Yeni gün, bilet numarası 101\'den başlatılıyor');
-          transaction.update(docRef, {
+          transaction.set(docRef, {
             'currentDate': todayKey,
             'lastTicketNumber': 101,
             'updatedAt': FieldValue.serverTimestamp(),
           });
+          print('FIREBASE_SERVICE: Yeni gün başladı, 101 döndürülüyor');
           return 101;
         }
 
         // Aynı günse mevcut değeri al ve arttır
-        final currentNumber = data['lastTicketNumber'] as int? ?? 100;
         final newNumber = currentNumber + 1;
 
         // Değeri güncelle
@@ -224,17 +224,12 @@ class FirebaseService {
         return newNumber;
       });
 
-      print('FIREBASE_SERVICE: Yeni bilet numarası: $newTicketNumber');
+
       return newTicketNumber;
     } catch (e) {
       print('FIREBASE_SERVICE: Bilet numarası arttırılırken hata: $e');
-      // Son bilet numarasını tekrar almayı dene
-      try {
-        final lastNumber = await getLastTicketNumber();
-        return lastNumber + 1;
-      } catch (_) {
-        return 100; // Hata durumunda varsayılan değer
-      }
+      // Hata durumunda 100'den başla
+      return 100;
     }
   }
 
@@ -257,16 +252,97 @@ class FirebaseService {
           .where('isActive', isEqualTo: true)
           .snapshots()
           .map(
-            (snapshot) =>
-                snapshot.docs
-                    .map(
-                      (doc) => Customer.fromJson({...doc.data(), 'id': doc.id}),
-                    )
-                    .toList(),
+            (snapshot) {
+              final customers = snapshot.docs
+                  .map(
+                    (doc) => Customer.fromJson({...doc.data(), 'id': doc.id}),
+                  )
+                  .toList();
+              
+              // Sadece bugün giriş yapmış ve aktif olan müşterileri filtrele
+              final now = DateTime.now();
+              final todayStart = DateTime(now.year, now.month, now.day);
+              final todayEnd = todayStart.add(const Duration(days: 1)).subtract(const Duration(seconds: 1));
+              
+              final activeCustomers = customers.where((customer) {
+                // entryTime null değil ve geçerli bir tarih
+                if (customer.entryTime == null) return false;
+                
+                // Sadece bugün giriş yapmış müşteriler
+                if (customer.entryTime.isBefore(todayStart) || customer.entryTime.isAfter(todayEnd)) {
+                  return false;
+                }
+                
+                // Kalan süresi var
+                if (customer.remainingTime.inSeconds <= 0) return false;
+                
+                // Tamamlanmamış
+                if (customer.isCompleted) return false;
+                
+                return true;
+              }).toList();
+              
+
+              
+              return activeCustomers;
+            },
           )
           .distinct(); // Aynı veriyi tekrar gönderme
     } catch (e) {
       print('Aktif müşterileri dinlerken hata: $e');
+      // Boş stream dön
+      return Stream.value([]);
+    }
+  }
+
+  // Tüm müşterileri dinleme stream'i (aktif, tamamlanan, iptal edilen)
+  Stream<List<Customer>> getAllCustomersStream() {
+    try {
+      // Çevrimdışı mod ise boş stream dön
+      if (_isOfflineMode) {
+        return Stream.value([]);
+      }
+
+      // Kullanıcının oturum açtığından emin ol
+      if (_auth.currentUser == null) {
+        print('Tüm müşterileri dinlemek için kimlik doğrulaması gerekiyor');
+        return Stream.value([]);
+      }
+
+      // Stream'i optimize et - tüm müşterileri dinle
+      return _customersCollection
+          .snapshots()
+          .map(
+            (snapshot) {
+              final customers = snapshot.docs
+                  .map(
+                    (doc) => Customer.fromJson({...doc.data(), 'id': doc.id}),
+                  )
+                  .toList();
+              
+              // Sadece bugün giriş yapmış müşterileri filtrele
+              final now = DateTime.now();
+              final todayStart = DateTime(now.year, now.month, now.day);
+              final todayEnd = todayStart.add(const Duration(days: 1)).subtract(const Duration(seconds: 1));
+              
+              final todayCustomers = customers.where((customer) {
+                // entryTime null değil ve geçerli bir tarih
+                if (customer.entryTime == null) return false;
+                
+                // Sadece bugün giriş yapmış müşteriler
+                if (customer.entryTime.isBefore(todayStart) || customer.entryTime.isAfter(todayEnd)) {
+                  return false;
+                }
+                
+                return true;
+              }).toList();
+              
+              return todayCustomers;
+            },
+          )
+          .distinct(); // Aynı veriyi tekrar gönderme
+    } catch (e) {
+      print('Tüm müşterileri dinlerken hata: $e');
       // Boş stream dön
       return Stream.value([]);
     }
@@ -353,6 +429,60 @@ class FirebaseService {
     }
   }
 
+  // Süre biten müşterileri otomatik tamamla
+  Future<void> autoCompleteExpiredCustomers() async {
+    try {
+      if (_auth.currentUser == null) return;
+
+      final now = DateTime.now();
+      final todayStart = DateTime(now.year, now.month, now.day);
+      final todayEnd = todayStart.add(const Duration(days: 1)).subtract(const Duration(seconds: 1));
+
+      // Bugünkü aktif müşterileri getir
+      final snapshot = await _customersCollection
+          .where('isActive', isEqualTo: true)
+          .where('isCompleted', isEqualTo: false)
+          .get();
+
+      for (final doc in snapshot.docs) {
+        final data = doc.data();
+        final entryTime = DateTime.parse(data['entryTime'] as String);
+        
+        // Sadece bugünkü müşteriler
+        if (entryTime.isBefore(todayStart) || entryTime.isAfter(todayEnd)) {
+          continue;
+        }
+
+        final durationMinutes = data['durationMinutes'] as int? ?? 60;
+        final exitTime = entryTime.add(Duration(minutes: durationMinutes));
+
+        // Süre bittiyse otomatik tamamla
+        if (exitTime.isBefore(now)) {
+          final usedDuration = exitTime.difference(entryTime);
+          final usedMinutes = usedDuration.inMinutes;
+          final usedSeconds = usedDuration.inSeconds % 60;
+          
+          await _customersCollection.doc(doc.id).update({
+            'isActive': false,
+            'isCompleted': true,
+            'completedTime': FieldValue.serverTimestamp(),
+            'exitTime': FieldValue.serverTimestamp(),
+            'remainingMinutes': 0, // Süre bitti
+            'remainingSeconds': 0, // Kalan süre saniye
+            'explicitRemainingMinutes': 0, // Model için aynı değer
+            'explicitRemainingSeconds': 0, // Model için saniye
+            'usedMinutes': usedMinutes, // Toplam kullanılan süre
+            'usedSeconds': usedSeconds, // Kullanılan süre saniye
+          });
+
+          print('FIREBASE_SERVICE: Müşteri otomatik tamamlandı, ID: ${doc.id}');
+        }
+      }
+    } catch (e) {
+      print('FIREBASE_SERVICE: Otomatik tamamlama hatası: $e');
+    }
+  }
+
   // Müşteriyi tamamlandı olarak işaretle
   Future<void> completeCustomer(String id) async {
     try {
@@ -372,9 +502,45 @@ class FirebaseService {
       }
 
       // Belge varsa güncelle
+      final customerData = docSnapshot.data()!;
+      
+      // Teslim edildiği andaki kullanılan ve kalan süreyi hesapla (saniye duyarlı)
+      final entryTime = DateTime.parse(customerData['entryTime'] as String);
+      final durationMinutes = customerData['durationMinutes'] as int? ?? 60;
+      final now = DateTime.now();
+      
+      // Kullanılan süreyi hesapla (giriş zamanından şu ana kadar, saniye duyarlı)
+      final usedDuration = now.difference(entryTime);
+      final usedMinutes = usedDuration.inMinutes;
+      final usedSeconds = usedDuration.inSeconds % 60;
+      
+      // Kalan süreyi hesapla (saniye duyarlı)
+      // Müşteri teslim edildiğinde kalan süre 0 olur
+      final exitTime = entryTime.add(Duration(minutes: durationMinutes));
+      int remainingMinutes = 0;
+      int remainingSeconds = 0;
+      
+      // Eğer süre henüz bitmemişse, kalan süreyi hesapla
+      if (exitTime.isAfter(now)) {
+        final remainingDuration = exitTime.difference(now);
+        remainingMinutes = remainingDuration.inMinutes;
+        remainingSeconds = remainingDuration.inSeconds % 60;
+      }
+      // Eğer süre bitmişse veya teslim ediliyorsa, kalan süre 0 olur
+      
+
+      
       await _customersCollection.doc(id).update({
         'isActive': false,
+        'isCompleted': true,
+        'completedTime': FieldValue.serverTimestamp(),
         'exitTime': FieldValue.serverTimestamp(),
+        'remainingMinutes': remainingMinutes, // Teslim edildiği andaki kalan süre
+        'remainingSeconds': remainingSeconds, // Kalan süre saniye
+        'explicitRemainingMinutes': remainingMinutes, // Model için aynı değer
+        'explicitRemainingSeconds': remainingSeconds, // Model için saniye
+        'usedMinutes': usedMinutes, // Teslim edildiği andaki kullanılan süre
+        'usedSeconds': usedSeconds, // Kullanılan süre saniye
       });
 
       print('FIREBASE_SERVICE: Müşteri başarıyla tamamlandı, ID: $id');
@@ -391,6 +557,8 @@ class FirebaseService {
           await _customersCollection.doc(id).set(
             {
               'isActive': false,
+              'isCompleted': true,
+              'completedTime': FieldValue.serverTimestamp(),
               'exitTime': FieldValue.serverTimestamp(),
               'updatedAt': FieldValue.serverTimestamp(),
             },
@@ -472,9 +640,36 @@ class FirebaseService {
       final snapshot =
           await _customersCollection.where('isActive', isEqualTo: true).get();
 
-      return snapshot.docs
+      final customers = snapshot.docs
           .map((doc) => Customer.fromJson({...doc.data(), 'id': doc.id}))
           .toList();
+      
+      // Sadece bugün giriş yapmış ve aktif olan müşterileri filtrele
+      final now = DateTime.now();
+      final todayStart = DateTime(now.year, now.month, now.day);
+      final todayEnd = todayStart.add(const Duration(days: 1)).subtract(const Duration(seconds: 1));
+      
+      final activeCustomers = customers.where((customer) {
+        // entryTime null değil ve geçerli bir tarih
+        if (customer.entryTime == null) return false;
+        
+        // Sadece bugün giriş yapmış müşteriler
+        if (customer.entryTime.isBefore(todayStart) || customer.entryTime.isAfter(todayEnd)) {
+          return false;
+        }
+        
+        // Kalan süresi var
+        if (customer.remainingTime.inSeconds <= 0) return false;
+        
+        // Tamamlanmamış
+        if (customer.isCompleted) return false;
+        
+        return true;
+      }).toList();
+      
+
+      
+      return activeCustomers;
     } catch (e) {
       print('Aktif müşterileri alırken hata: $e');
       return [];
@@ -505,6 +700,201 @@ class FirebaseService {
     } catch (e) {
       print('Tamamlanmış müşterileri alırken hata: $e');
       return [];
+    }
+  }
+
+  // Tasks koleksiyonu referansı
+  CollectionReference<Map<String, dynamic>> get _tasksCollection =>
+      _firestore.collection('tasks');
+
+  /// Tüm görevleri getir
+  Future<List<Map<String, dynamic>>> getTasks() async {
+    try {
+      if (_isOfflineMode) {
+        print('FIREBASE_SERVICE: Çevrimdışı modda görevler alınamadı');
+        return [];
+      }
+
+      if (_auth.currentUser == null) {
+        print('Görevleri almak için kimlik doğrulaması gerekiyor');
+        return [];
+      }
+
+      final snapshot = await _tasksCollection
+          .where('isActive', isEqualTo: true)
+          .orderBy('createdAt', descending: true)
+          .get();
+
+      return snapshot.docs
+          .map((doc) => {...doc.data(), 'id': doc.id})
+          .toList();
+    } catch (e) {
+      print('Görevleri alırken hata: $e');
+      return [];
+    }
+  }
+
+  /// Belirli bir görevi getir
+  Future<Map<String, dynamic>?> getTask(String taskId) async {
+    try {
+      if (_isOfflineMode) {
+        print('FIREBASE_SERVICE: Çevrimdışı modda görev alınamadı');
+        return null;
+      }
+
+      if (_auth.currentUser == null) {
+        print('Görevi almak için kimlik doğrulaması gerekiyor');
+        return null;
+      }
+
+      final doc = await _tasksCollection.doc(taskId).get();
+      if (doc.exists) {
+        return {...doc.data()!, 'id': doc.id};
+      }
+      return null;
+    } catch (e) {
+      print('Görevi alırken hata: $e');
+      return null;
+    }
+  }
+
+  /// Yeni görev ekle
+  Future<void> addTask(Map<String, dynamic> taskData) async {
+    try {
+      if (_isOfflineMode) {
+        print('FIREBASE_SERVICE: Çevrimdışı modda görev eklenemez');
+        return;
+      }
+
+      if (_auth.currentUser == null) {
+        print('Görev eklemek için kimlik doğrulaması gerekiyor');
+        return;
+      }
+
+      await _tasksCollection.add(taskData);
+      print('FIREBASE_SERVICE: Görev başarıyla eklendi');
+    } catch (e) {
+      print('FIREBASE_SERVICE: Görev eklenirken hata: $e');
+      rethrow;
+    }
+  }
+
+  /// Görevi güncelle
+  Future<void> updateTask(String taskId, Map<String, dynamic> taskData) async {
+    try {
+      if (_isOfflineMode) {
+        print('FIREBASE_SERVICE: Çevrimdışı modda görev güncellenemez');
+        return;
+      }
+
+      if (_auth.currentUser == null) {
+        print('Görevi güncellemek için kimlik doğrulaması gerekiyor');
+        return;
+      }
+
+      await _tasksCollection.doc(taskId).update(taskData);
+      print('FIREBASE_SERVICE: Görev başarıyla güncellendi');
+    } catch (e) {
+      print('FIREBASE_SERVICE: Görev güncellenirken hata: $e');
+      rethrow;
+    }
+  }
+
+  /// Görevi sil
+  Future<void> deleteTask(String taskId) async {
+    try {
+      if (_isOfflineMode) {
+        print('FIREBASE_SERVICE: Çevrimdışı modda görev silinemez');
+        return;
+      }
+
+      if (_auth.currentUser == null) {
+        print('Görevi silmek için kimlik doğrulaması gerekiyor');
+        return;
+      }
+
+      await _tasksCollection.doc(taskId).delete();
+      print('FIREBASE_SERVICE: Görev başarıyla silindi');
+    } catch (e) {
+      print('FIREBASE_SERVICE: Görev silinirken hata: $e');
+      rethrow;
+    }
+  }
+
+  // Bilet numaralarını sıfırla (debug için)
+  Future<void> resetTicketNumbers() async {
+    try {
+      // Kullanıcının oturum açtığından emin ol
+      if (_auth.currentUser == null) {
+        print('Bilet numaralarını sıfırlamak için kimlik doğrulaması gerekiyor');
+        return;
+      }
+
+      print('FIREBASE_SERVICE: Bilet numaraları sıfırlanıyor...');
+
+      // Bugünün tarihini al
+      final today = DateTime.now();
+      final todayKey = '${today.year}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')}';
+
+      // settings/daily_tickets dökümanını tamamen sil ve yeniden oluştur
+      final docRef = _settingsCollection.doc('daily_tickets');
+      
+      // Önce sil
+      try {
+        await docRef.delete();
+        print('FIREBASE_SERVICE: Eski daily_tickets dökümanı silindi');
+      } catch (e) {
+        print('FIREBASE_SERVICE: Eski daily_tickets silinirken hata: $e');
+      }
+      
+      // Sonra yeniden oluştur
+      await docRef.set({
+        'currentDate': todayKey,
+        'lastTicketNumber': 100,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      print('FIREBASE_SERVICE: Bilet numaraları 100\'den başlatıldı');
+    } catch (e) {
+      print('FIREBASE_SERVICE: Bilet numaraları sıfırlanırken hata: $e');
+    }
+  }
+
+  // Tüm müşteri verilerini sil
+  Future<void> clearAllCustomers() async {
+    try {
+      // Kullanıcının oturum açtığından emin ol
+      if (_auth.currentUser == null) {
+        print('Müşteri verilerini silmek için kimlik doğrulaması gerekiyor');
+        return;
+      }
+
+      print('FIREBASE_SERVICE: Tüm müşteri verileri siliniyor...');
+
+      // Tüm müşteri dökümanlarını getir
+      final snapshot = await _customersCollection.get();
+      
+      // Batch delete işlemi
+      final batch = _firestore.batch();
+      for (final doc in snapshot.docs) {
+        batch.delete(doc.reference);
+      }
+      
+      // Batch'i uygula
+      await batch.commit();
+
+      // daily_tickets dökümanını da tamamen sil
+      try {
+        final dailyTicketsDoc = _settingsCollection.doc('daily_tickets');
+        await dailyTicketsDoc.delete();
+        print('FIREBASE_SERVICE: daily_tickets dökümanı silindi');
+      } catch (e) {
+        print('FIREBASE_SERVICE: daily_tickets silinirken hata: $e');
+      }
+
+      print('FIREBASE_SERVICE: ${snapshot.docs.length} müşteri verisi ve daily_tickets silindi');
+    } catch (e) {
+      print('FIREBASE_SERVICE: Müşteri verileri silinirken hata: $e');
     }
   }
 }

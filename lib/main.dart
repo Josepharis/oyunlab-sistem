@@ -4,17 +4,25 @@ import 'package:intl/intl.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'core/constants/app_constants.dart';
+import 'package:provider/provider.dart';
+
 import 'core/theme/app_theme.dart';
 import 'core/di/service_locator.dart';
 import 'data/repositories/customer_repository.dart';
 import 'data/repositories/menu_repository.dart';
 import 'data/models/order_model.dart';
+import 'data/services/admin_auth_service.dart';
+import 'data/repositories/admin_user_repository.dart';
+import 'data/repositories/business_settings_repository.dart';
 import 'firebase_options.dart';
+import 'presentation/screens/login_screen.dart';
+import 'presentation/screens/register_screen.dart';
 import 'presentation/screens/home_screen.dart';
 import 'presentation/screens/table_order_screen.dart';
 import 'presentation/screens/sales_screen.dart';
+import 'presentation/screens/operations_screen.dart';
 import 'presentation/screens/profile_screen.dart';
+import 'presentation/screens/business_management_screen.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'core/utils/firebase_test_util.dart';
 
@@ -84,16 +92,18 @@ void main() async {
       print('Menü boş! Test verisi ekleniyor...');
       final testItems = [
         ProductItem(
+          id: 'test_burger_1',
           name: "Flutter Burger",
           price: 45.99,
           category: ProductCategory.food,
           description: "Lezzetli Flutter burger",
         ),
         ProductItem(
-          name: "Dart Kola",
-          price: 15.0,
-          category: ProductCategory.drink,
-          description: "Serinletici Dart kola",
+          id: 'test_pizza_1',
+          name: "Dart Pizza",
+          price: 35.99,
+          category: ProductCategory.food,
+          description: "Özel Dart pizza",
         ),
       ];
 
@@ -105,6 +115,34 @@ void main() async {
   } catch (e) {
     print('Menü verileri yüklenirken hata: $e');
   }
+
+  // Admin kullanıcılarını başlat
+  try {
+    print('Admin kullanıcıları yükleniyor...');
+    final adminUserRepo = AdminUserRepository();
+    await adminUserRepo.addDefaultAdminUser();
+    print('Admin kullanıcıları başarıyla yüklendi');
+    
+    // Firebase Authentication'da admin kullanıcısı oluştur
+    print('Firebase Authentication admin kullanıcısı oluşturuluyor...');
+    final adminAuthService = AdminAuthService();
+    await adminAuthService.createFirebaseAdminUser('yusuffrkn73@gmail.com', '123456');
+    print('Firebase Authentication admin kullanıcısı başarıyla oluşturuldu');
+  } catch (e) {
+    print('Admin kullanıcıları yüklenirken hata: $e');
+  }
+
+  // İşletme ayarlarını başlat
+  try {
+    print('İşletme ayarları yükleniyor...');
+    final businessSettingsRepo = BusinessSettingsRepository();
+    await businessSettingsRepo.addDefaultBusinessSettings();
+    print('İşletme ayarları başarıyla yüklendi');
+  } catch (e) {
+    print('İşletme ayarları yüklenirken hata: $e');
+  }
+
+  // Auth state listener artık AdminAuthService constructor'ında otomatik başlatılıyor
 
   // Dependency injection kurulumu - Firebase başarıyla başlatılsın ya da başlatılmasın
   // uygulamayı offline modda başlatabilmek için devam ediyoruz
@@ -122,11 +160,24 @@ void main() async {
   await initializeDateFormatting('tr_TR', null);
   Intl.defaultLocale = 'tr_TR';
 
-  runApp(const OyunLabApp());
+  runApp(
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => AdminAuthService()),
+      ],
+      child: Consumer<AdminAuthService>(
+        builder: (context, authService, child) {
+          return OyunLabApp(authService: authService);
+        },
+      ),
+    ),
+  );
 }
 
 class OyunLabApp extends StatelessWidget {
-  const OyunLabApp({super.key});
+  final AdminAuthService authService;
+  
+  const OyunLabApp({super.key, required this.authService});
 
   @override
   Widget build(BuildContext context) {
@@ -142,7 +193,13 @@ class OyunLabApp extends StatelessWidget {
         GlobalCupertinoLocalizations.delegate,
       ],
       supportedLocales: const [Locale('tr', 'TR')],
-      home: const MainScreen(),
+      initialRoute: authService.isLoggedIn ? '/home' : '/login',
+      routes: {
+        '/': (context) => const LoginScreen(), // Ana route eklendi
+        '/login': (context) => const LoginScreen(),
+        '/register': (context) => const RegisterScreen(),
+        '/home': (context) => const MainScreen(),
+      },
     );
   }
 }
@@ -165,12 +222,72 @@ class _MainScreenState extends State<MainScreen> {
     super.initState();
     // GetIt üzerinden CustomerRepository'yi al
     _customerRepository = ServiceLocator.locator<CustomerRepository>();
+    _initializeScreens();
+  }
+
+  void _initializeScreens() {
+    _screens.clear();
     _screens.addAll([
-      HomeScreen(customerRepository: _customerRepository),
+      HomeScreen(
+        customerRepository: _customerRepository,
+        onDataCleared: () {
+          // Sales screen otomatik olarak stream'den güncellenecek
+        },
+      ),
       TableOrderScreen(customerRepository: _customerRepository),
       SalesScreen(customerRepository: _customerRepository),
-      const ProfileScreen(),
+      Consumer<AdminAuthService>(
+        builder: (context, authService, child) {
+          return OperationsScreen(
+            customerRepository: _customerRepository,
+            menuRepository: ServiceLocator.locator<MenuRepository>(),
+          );
+        },
+      ),
+      // Kullanıcı rolüne göre ekran seçimi
+      Consumer<AdminAuthService>(
+        builder: (context, authService, child) {
+          print('Ekran seçimi - isAdmin: ${authService.isAdmin}, isLoggedIn: ${authService.isLoggedIn}');
+          if (authService.isAdmin) {
+            return const BusinessManagementScreen();
+          } else {
+            return const ProfileScreen();
+          }
+        },
+      ),
     ]);
+  }
+
+  // Navigation bar item'larını oluştur
+  List<BottomNavigationBarItem> _buildNavigationItems(AdminAuthService authService) {
+    return [
+      const BottomNavigationBarItem(
+        icon: Icon(Icons.home_rounded),
+        label: 'Ana Sayfa',
+      ),
+      const BottomNavigationBarItem(
+        icon: Icon(Icons.receipt_long_rounded),
+        label: 'Masa Siparişi',
+      ),
+      const BottomNavigationBarItem(
+        icon: Icon(Icons.receipt_long_rounded),
+        label: 'Müşteriler',
+      ),
+      const BottomNavigationBarItem(
+        icon: Icon(Icons.analytics_rounded),
+        label: 'İşleyiş',
+      ),
+      // Kullanıcı rolüne göre son sekme
+      authService.isAdmin
+          ? const BottomNavigationBarItem(
+              icon: Icon(Icons.business_rounded),
+              label: 'İşletmem',
+            )
+          : const BottomNavigationBarItem(
+              icon: Icon(Icons.person_rounded),
+              label: 'Profil',
+            ),
+    ];
   }
 
   @override
@@ -214,39 +331,26 @@ class _MainScreenState extends State<MainScreen> {
             topLeft: Radius.circular(20.0),
             topRight: Radius.circular(20.0),
           ),
-          child: BottomNavigationBar(
-            items: const <BottomNavigationBarItem>[
-              BottomNavigationBarItem(
-                icon: Icon(Icons.home_rounded),
-                label: 'Ana Sayfa',
-              ),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.restaurant_rounded),
-                label: 'Masa Siparişi',
-              ),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.receipt_long_rounded),
-                label: 'Müşteriler',
-              ),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.person_rounded),
-                label: 'Profil',
-              ),
-            ],
-            currentIndex: _selectedIndex,
-            onTap: (index) {
-              setState(() {
-                _selectedIndex = index;
-              });
+          child: Consumer<AdminAuthService>(
+            builder: (context, authService, child) {
+              return BottomNavigationBar(
+                items: _buildNavigationItems(authService),
+                currentIndex: _selectedIndex,
+                onTap: (index) {
+                  setState(() {
+                    _selectedIndex = index;
+                  });
+                },
+                type: BottomNavigationBarType.fixed,
+                backgroundColor: Colors.white,
+                selectedItemColor: AppTheme.primaryColor,
+                unselectedItemColor: Colors.grey.shade500,
+                showUnselectedLabels: true,
+                selectedFontSize: 12,
+                unselectedFontSize: 12,
+                elevation: 0,
+              );
             },
-            type: BottomNavigationBarType.fixed,
-            backgroundColor: Colors.white,
-            selectedItemColor: AppTheme.primaryColor,
-            unselectedItemColor: Colors.grey.shade500,
-            showUnselectedLabels: true,
-            selectedFontSize: 12,
-            unselectedFontSize: 12,
-            elevation: 0,
           ),
         ),
       ),

@@ -1,6 +1,8 @@
 import 'package:get_it/get_it.dart';
 import '../../data/repositories/customer_repository.dart';
 import '../../data/repositories/menu_repository.dart';
+import '../../data/repositories/business_settings_repository.dart';
+import '../../data/repositories/staff_repository.dart';
 import '../../data/services/firebase_service.dart';
 
 /// Servis locator sınıfı, uygulama genelinde servis ve repository'lere
@@ -82,6 +84,16 @@ class ServiceLocator {
     // Menü repository
     locator.registerLazySingleton<MenuRepository>(
       () => MenuRepository(),
+    );
+
+    // İşletme ayarları repository
+    locator.registerLazySingleton<BusinessSettingsRepository>(
+      () => BusinessSettingsRepository(),
+    );
+
+    // Personel repository
+    locator.registerLazySingleton<StaffRepository>(
+      () => StaffRepository(),
     );
   }
 }

@@ -61,8 +61,8 @@ class CustomerRepository {
         return;
       }
 
-      // Stream'i optimize et - sadece değişiklik olduğunda güncelle
-      _firebaseService.getActiveCustomersStream().listen(
+      // Stream'i optimize et - tüm müşterileri dinle (aktif, tamamlanan, iptal edilen)
+      _firebaseService.getAllCustomersStream().listen(
         (customers) {
           // Sadece veri değiştiyse güncelle
           if (_cachedCustomers.length != customers.length || 
@@ -81,6 +81,8 @@ class CustomerRepository {
       print('Müşteri dinleme başlatma hatası: $e');
     }
   }
+
+
   
   /// Müşteri listelerinin eşit olup olmadığını kontrol eder
   bool _areCustomersEqual(List<Customer> list1, List<Customer> list2) {
@@ -89,7 +91,8 @@ class CustomerRepository {
     for (int i = 0; i < list1.length; i++) {
       if (list1[i].id != list2[i].id || 
           list1[i].remainingTime != list2[i].remainingTime ||
-          list1[i].isCompleted != list2[i].isCompleted) {
+          list1[i].isCompleted != list2[i].isCompleted ||
+          list1[i].isActive != list2[i].isActive) {
         return false;
       }
     }
@@ -116,14 +119,8 @@ class CustomerRepository {
     try {
       if (_isOfflineMode) {
         print('CUSTOMER_REPO: Çevrimdışı modda son bilet numarası alınamadı');
-        // Cache'deki en büyük bilet numarasını bul
-        if (_cachedCustomers.isEmpty) {
-          return 100;
-        }
-        final maxTicket = _cachedCustomers
-            .map((c) => c.ticketNumber)
-            .reduce((a, b) => a > b ? a : b);
-        return maxTicket;
+        // Her gün 100'den başla
+        return 100;
       }
 
       return await _firebaseService.getLastTicketNumber();
@@ -138,14 +135,8 @@ class CustomerRepository {
     try {
       if (_isOfflineMode) {
         print('CUSTOMER_REPO: Çevrimdışı modda yeni bilet numarası alınamadı');
-        // Cache'deki en büyük bilet numarası + 1
-        if (_cachedCustomers.isEmpty) {
-          return 101;
-        }
-        final maxTicket = _cachedCustomers
-            .map((c) => c.ticketNumber)
-            .reduce((a, b) => a > b ? a : b);
-        return maxTicket + 1;
+        // Her gün 100'den başla
+        return 100;
       }
 
       return await _firebaseService.incrementTicketNumber();
@@ -194,12 +185,7 @@ class CustomerRepository {
         'CUSTOMER_REPO: Müşteri başarıyla eklendi: ${customer.childName}, Bilet: $ticketNumber',
       );
 
-      // Önbelleği manuel olarak güncelle
-      if (!_cachedCustomers.any((c) => c.id == customerWithId.id)) {
-        _cachedCustomers.add(customerWithId);
-        _customerStreamController.add(_cachedCustomers);
-        print('CUSTOMER_REPO: Yerel cache ve stream manuel olarak güncellendi');
-      }
+      // Firestore listener otomatik olarak güncelleyecek, manuel güncelleme gereksiz
     } catch (e) {
       print('CUSTOMER_REPO: Müşteri eklenirken hata: $e');
       print('CUSTOMER_REPO: Hata stack: ${StackTrace.current}');
@@ -239,6 +225,21 @@ class CustomerRepository {
     } catch (e) {
       print('Müşteri silinirken hata: $e');
       rethrow;
+    }
+  }
+
+  /// Süre biten müşterileri otomatik tamamla
+  Future<void> autoCompleteExpiredCustomers() async {
+    try {
+      if (_isOfflineMode) {
+        print('CUSTOMER_REPO: Çevrimdışı modda otomatik tamamlama yapılamaz');
+        return;
+      }
+
+      await _firebaseService.autoCompleteExpiredCustomers();
+      print('CUSTOMER_REPO: Süre biten müşteriler otomatik tamamlandı');
+    } catch (e) {
+      print('CUSTOMER_REPO: Otomatik tamamlama hatası: $e');
     }
   }
 
@@ -419,6 +420,48 @@ class CustomerRepository {
       _customerStreamController.close();
     } catch (e) {
       print('CUSTOMER_REPO: Stream controller kapatılırken hata: $e');
+    }
+  }
+
+  /// Bilet numaralarını sıfırla (debug için)
+  Future<void> resetTicketNumbers() async {
+    try {
+      // Çevrimdışı modda işlemi atla
+      if (_isOfflineMode) {
+        print('CUSTOMER_REPO: Çevrimdışı modda bilet numaraları sıfırlanamaz');
+        return;
+      }
+
+      await _firebaseService.resetTicketNumbers();
+      print('CUSTOMER_REPO: Bilet numaraları sıfırlandı');
+    } catch (e) {
+      print('CUSTOMER_REPO: Bilet numaraları sıfırlanırken hata: $e');
+    }
+  }
+
+  /// Tüm müşteri verilerini sil
+  Future<void> clearAllCustomers() async {
+    try {
+      // Çevrimdışı modda işlemi atla
+      if (_isOfflineMode) {
+        print('CUSTOMER_REPO: Çevrimdışı modda müşteri verileri silinemez');
+        return;
+      }
+
+      print('CUSTOMER_REPO: Tüm müşteri verileri siliniyor...');
+
+      // Firebase'den tüm müşterileri sil
+      await _firebaseService.clearAllCustomers();
+      
+      // Cache'i temizle
+      _cachedCustomers.clear();
+      
+      // Stream'i güncelle - boş liste gönder
+      _customerStreamController.add(_cachedCustomers);
+      
+      print('CUSTOMER_REPO: Tüm müşteri verileri silindi ve cache temizlendi');
+    } catch (e) {
+      print('CUSTOMER_REPO: Müşteri verileri silinirken hata: $e');
     }
   }
 }

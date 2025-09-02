@@ -1,8 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../../core/theme/app_theme.dart';
+import '../../data/services/admin_auth_service.dart';
+import '../../data/services/shift_service.dart';
+import '../../data/services/sale_service.dart';
+import '../../data/models/admin_user_model.dart';
+import '../../data/models/shift_record_model.dart';
+import '../../data/models/sale_record_model.dart';
 import 'dart:async';
-import 'package:flutter_localizations/flutter_localizations.dart';
+
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({Key? key}) : super(key: key);
@@ -15,76 +23,249 @@ class _ProfileScreenState extends State<ProfileScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
 
+  // Servisler
+  late ShiftService _shiftService;
+  late SaleService _saleService;
+
   // Mesai bilgileri
   bool _isShiftActive = false;
   DateTime? _shiftStartTime;
   Duration _currentShiftDuration = Duration.zero;
   List<ShiftRecord> _shiftHistory = [];
   Timer? _shiftTimer;
+  ShiftRecord? _activeShift;
+  
+  // Satış geçmişi artık otomatik yenilenmeyecek
 
   // Satış verileri
-  final List<SaleRecord> _salesHistory = [];
+  List<SaleRecord> _salesHistory = [];
 
-  // Personel bilgileri
-  final String _staffName = "Ayşe Yılmaz";
-  final String _staffPosition = "Oyun Alanı Personeli";
-  final String _staffId = "P-10023";
+  // Admin kullanıcı bilgileri
+  String _staffName = "Yusuf Admin";
+  String _staffPosition = "Sistem Yöneticisi";
+  String _staffId = "ADMIN-001";
+  AdminUser? _currentUser;
+
+  // Yükleme durumu
+  bool _isLoading = true;
+  bool _isLoadingShifts = false;
+  bool _isLoadingSales = false;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    
+    // Servisleri başlat
+    _shiftService = ShiftService();
+    _saleService = SaleService();
 
-    // Örnek mesai geçmişi
-    final now = DateTime.now();
-    _shiftHistory = [
-      ShiftRecord(
-        startTime: now.subtract(const Duration(days: 1, hours: 9)),
-        endTime: now.subtract(const Duration(days: 1, hours: 1)),
-      ),
-      ShiftRecord(
-        startTime: now.subtract(const Duration(days: 2, hours: 8)),
-        endTime: now.subtract(const Duration(days: 2)),
-      ),
-      ShiftRecord(
-        startTime: now.subtract(const Duration(days: 3, hours: 9)),
-        endTime: now.subtract(const Duration(days: 3, hours: 1)),
-      ),
-    ];
+    // Firebase Auth state listener'ı ekle
+    FirebaseAuth.instance.authStateChanges().listen((User? user) {
+      if (mounted) {
+        _updateUserInfo();
+      }
+    });
 
-    // Örnek satış geçmişi
-    _salesHistory.addAll([
-      SaleRecord(
-        date: now.subtract(const Duration(days: 1, hours: 3)),
-        customerName: "Ali Can",
-        amount: 60.0,
-        description: "2 saat oyun alanı",
-      ),
-      SaleRecord(
-        date: now.subtract(const Duration(days: 1, hours: 4)),
-        customerName: "Mehmet Yıldız",
-        amount: 45.0,
-        description: "1.5 saat oyun alanı",
-      ),
-      SaleRecord(
-        date: now.subtract(const Duration(days: 1, hours: 6)),
-        customerName: "Zeynep Kaya",
-        amount: 30.0,
-        description: "1 saat oyun alanı",
-      ),
-      SaleRecord(
-        date: now.subtract(const Duration(days: 2, hours: 5)),
-        customerName: "Ayşe Demir",
-        amount: 50.0,
-        description: "1.5 saat oyun alanı + yiyecek",
-      ),
-      SaleRecord(
-        date: now.subtract(const Duration(days: 2, hours: 7)),
-        customerName: "Can Özcan",
-        amount: 65.0,
-        description: "2 saat oyun alanı + içecek",
-      ),
-    ]);
+    // Kullanıcı bilgilerini güncelle
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _updateUserInfo();
+    });
+    
+    // Satış geçmişi artık otomatik yenilenmeyecek - sadece gerektiğinde güncellenecek
+    // Callback sistemi kurulumu
+    setOnSalesUpdateCallback(() {
+      if (mounted) {
+        _loadSalesHistory();
+      }
+    });
+  }
+
+  // Kullanıcı bilgilerini güncelle ve verileri yükle
+  void _updateUserInfo() async {
+    // Firebase Auth'dan kullanıcı bilgilerini al
+    final firebaseUser = FirebaseAuth.instance.currentUser;
+    print('Firebase Auth current user: $firebaseUser');
+    
+    if (firebaseUser != null) {
+      // Admin kullanıcı kontrolü
+      final adminAuthService = Provider.of<AdminAuthService>(context, listen: false);
+      final adminUser = adminAuthService.currentUser;
+      
+      if (adminUser != null) {
+        // Admin kullanıcı
+        setState(() {
+          _currentUser = adminUser;
+          _staffName = adminUser.name;
+          _staffPosition = adminAuthService.userRoleString;
+          _staffId = adminUser.id;
+        });
+
+        print('Admin kullanıcı bilgileri güncellendi:');
+        print('Name: $_staffName');
+        print('Position: $_staffPosition');
+        print('ID: $_staffId');
+      } else {
+        // Normal kullanıcı - Firebase Auth'dan bilgileri al
+        setState(() {
+          _currentUser = null; // Admin değil
+          _staffName = firebaseUser.displayName ?? firebaseUser.email?.split('@')[0] ?? 'Kullanıcı';
+          _staffPosition = 'Personel';
+          _staffId = firebaseUser.uid;
+        });
+
+        print('Normal kullanıcı bilgileri güncellendi:');
+        print('Name: $_staffName');
+        print('Position: $_staffPosition');
+        print('ID: $_staffId');
+      }
+
+      // Verileri yükle
+      await _loadUserData();
+    } else {
+      print('Hiçbir kullanıcı bulunamadı - loading false yapılıyor');
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  // Kullanıcı verilerini yükle
+  Future<void> _loadUserData() async {
+    // Kullanıcı ID'si yoksa veri yükleyemeyiz
+    if (_staffId.isEmpty) {
+      setState(() {
+        _isLoading = false;
+      });
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      // Aktif mesaiyi kontrol et
+      await _checkActiveShift();
+      
+      // Mesai geçmişini yükle
+      await _loadShiftHistory();
+      
+      // Satış geçmişini yükle
+      await _loadSalesHistory();
+      
+    } catch (e) {
+      print('Veriler yüklenirken hata: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Veriler yüklenirken hata oluştu: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  // Aktif mesaiyi kontrol et
+  Future<void> _checkActiveShift() async {
+    if (_staffId.isEmpty) return;
+
+    try {
+      final activeShift = await _shiftService.getActiveShift(_staffId);
+      
+      if (activeShift != null) {
+        setState(() {
+          _activeShift = activeShift;
+          _isShiftActive = true;
+          _shiftStartTime = activeShift.startTime;
+          _currentShiftDuration = DateTime.now().difference(activeShift.startTime);
+        });
+
+        // Timer başlat
+        _startShiftTimer();
+      }
+    } catch (e) {
+      print('Aktif mesai kontrol edilirken hata: $e');
+    }
+  }
+
+  // Mesai geçmişini yükle
+  Future<void> _loadShiftHistory() async {
+    if (_staffId.isEmpty) return;
+
+    setState(() {
+      _isLoadingShifts = true;
+    });
+
+    try {
+      final shifts = await _shiftService.getUserShiftHistory(_staffId, limit: 50);
+      setState(() {
+        _shiftHistory = shifts;
+      });
+    } catch (e) {
+      print('Mesai geçmişi yüklenirken hata: $e');
+    } finally {
+      setState(() {
+        _isLoadingShifts = false;
+      });
+    }
+  }
+
+  // Satış geçmişini yükle (public metod)
+  Future<void> refreshSalesHistory() async {
+    await _loadSalesHistory();
+  }
+
+  // Global callback sistemi için static metod
+  static Function()? _onSalesUpdate;
+  
+  static void setOnSalesUpdateCallback(Function() callback) {
+    _onSalesUpdate = callback;
+  }
+  
+  static void notifySalesUpdate() {
+    _onSalesUpdate?.call();
+  }
+
+  // Satış geçmişini yükle
+  Future<void> _loadSalesHistory() async {
+    if (_staffId.isEmpty) return;
+
+    setState(() {
+      _isLoadingSales = true;
+    });
+
+    try {
+      final sales = await _saleService.getUserSales(_staffId, limit: 50);
+      setState(() {
+        _salesHistory = sales;
+      });
+    } catch (e) {
+      print('Satış geçmişi yüklenirken hata: $e');
+    } finally {
+      setState(() {
+        _isLoadingSales = false;
+      });
+    }
+  }
+
+  // Mesai timer'ını başlat
+  void _startShiftTimer() {
+    _shiftTimer?.cancel();
+    _shiftTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (_shiftStartTime != null) {
+        setState(() {
+          _currentShiftDuration = DateTime.now().difference(_shiftStartTime!);
+        });
+      }
+    });
   }
 
   @override
@@ -95,169 +276,353 @@ class _ProfileScreenState extends State<ProfileScreen>
   }
 
   // Mesaiye başla
-  void _startShift() {
-    if (!_isShiftActive) {
-      setState(() {
-        _isShiftActive = true;
-        _shiftStartTime = DateTime.now();
-        _currentShiftDuration = Duration.zero;
-      });
+  Future<void> _startShift() async {
+    print('Mesai başlatma butonuna basıldı');
+    print('Staff ID: $_staffId');
+    print('Staff Name: $_staffName');
+    print('Is shift active: $_isShiftActive');
+    
+    // Önce kullanıcı bilgilerini kontrol et
+    if (_staffId.isEmpty) {
+      print('Staff ID boş - kullanıcı bilgileri yüklenmemiş');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Kullanıcı bilgileri yüklenemedi. Lütfen tekrar giriş yapın.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+    
+    if (_isShiftActive) {
+      print('Zaten aktif mesai var');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Zaten aktif bir mesainiz bulunuyor!'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
 
-      // Timer başlat ve her saniye güncelle
-      _shiftTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-        if (_shiftStartTime != null) {
-          setState(() {
-            _currentShiftDuration = DateTime.now().difference(_shiftStartTime!);
-          });
+    try {
+      print('Mesai servisi çağrılıyor...');
+      final newShift = await _shiftService.startShift(_staffId, _staffName);
+      print('Mesai servisi sonucu: $newShift');
+      
+      if (newShift != null) {
+        setState(() {
+          _activeShift = newShift;
+          _isShiftActive = true;
+          _shiftStartTime = newShift.startTime;
+          _currentShiftDuration = Duration.zero;
+        });
+
+        // Timer başlat
+        _startShiftTimer();
+
+        // Mesai geçmişini güncelle
+        await _loadShiftHistory();
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Mesaiye başladınız!'),
+              backgroundColor: Colors.green,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
         }
-      });
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Mesai başlatılırken hata: $e'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
     }
   }
 
   // Mesaiden çık
-  void _endShift() {
-    if (_isShiftActive && _shiftStartTime != null) {
-      _shiftTimer?.cancel();
+  Future<void> _endShift() async {
+    if (_staffId.isEmpty || !_isShiftActive || _activeShift == null) return;
 
-      final endTime = DateTime.now();
+    try {
+      final endedShift = await _shiftService.endShift(_activeShift!.id, null);
+      
+      if (endedShift != null) {
+        _shiftTimer?.cancel();
 
-      // Mesai kaydını ekle
-      setState(() {
-        _shiftHistory.insert(
-          0,
-          ShiftRecord(startTime: _shiftStartTime!, endTime: endTime),
+        setState(() {
+          _isShiftActive = false;
+          _shiftStartTime = null;
+          _currentShiftDuration = Duration.zero;
+          _activeShift = null;
+        });
+
+        // Mesai geçmişini güncelle
+        await _loadShiftHistory();
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Mesainiz başarıyla kaydedildi!'),
+              backgroundColor: Colors.green,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Mesai bitirilirken hata: $e'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
         );
-
-        _isShiftActive = false;
-        _shiftStartTime = null;
-        _currentShiftDuration = Duration.zero;
-      });
-
-      // Başarılı mesaj göster
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Mesainiz başarıyla kaydedildi!'),
-          backgroundColor: Colors.green,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      }
     }
   }
 
   // Mesai kaydını düzenle
-  void _editShiftRecord(
+  Future<void> _editShiftRecord(
     ShiftRecord shiftRecord,
     DateTime newStartTime,
     DateTime newEndTime,
-  ) {
-    setState(() {
-      final index = _shiftHistory.indexWhere(
-        (shift) => shift.id == shiftRecord.id,
+  ) async {
+    try {
+      setState(() {
+        _isLoading = true;
+      });
+
+      final updatedShift = await _shiftService.updateShift(
+        shiftRecord.id,
+        startTime: newStartTime,
+        endTime: newEndTime,
       );
-      if (index != -1) {
-        _shiftHistory[index] = ShiftRecord(
-          startTime: newStartTime,
-          endTime: newEndTime,
-          id: shiftRecord.id,
+
+      if (updatedShift != null) {
+        // Mesai geçmişini yenile
+        await _loadShiftHistory();
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Mesai kaydı başarıyla güncellendi!'),
+              backgroundColor: Colors.green,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Mesai kaydı güncellenirken hata: $e'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
         );
       }
-    });
-
-    // Başarılı mesaj göster
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Mesai kaydı başarıyla güncellendi!'),
-        backgroundColor: Colors.green,
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
   }
 
   // Mesai kaydını sil
-  void _deleteShiftRecord(ShiftRecord shift) {
-    setState(() {
-      _shiftHistory.removeWhere((shift) => shift.id == shift.id);
-    });
+  Future<void> _deleteShiftRecord(ShiftRecord shift) async {
+    try {
+      setState(() {
+        _isLoading = true;
+      });
 
-    // Başarılı mesaj göster
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Mesai kaydı başarıyla silindi!'),
-        backgroundColor: Colors.red,
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
+      final success = await _shiftService.deleteShift(shift.id);
+
+      if (success) {
+        // Mesai geçmişini yenile
+        await _loadShiftHistory();
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Mesai kaydı başarıyla silindi!'),
+              backgroundColor: Colors.green,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Mesai kaydı silinirken hata: $e'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
   }
 
   // Satış kaydını düzenle
-  void _editSaleRecord(
+  Future<void> _editSaleRecord(
     SaleRecord saleRecord,
     DateTime newDate,
     String newCustomerName,
     double newAmount,
     String newDescription,
-  ) {
-    setState(() {
-      final index = _salesHistory.indexWhere(
-        (sale) => sale.id == saleRecord.id,
+  ) async {
+    try {
+      setState(() {
+        _isLoading = true;
+      });
+
+      final updatedSale = saleRecord.copyWith(
+        date: newDate,
+        customerName: newCustomerName,
+        amount: newAmount,
+        description: newDescription,
       );
-      if (index != -1) {
-        _salesHistory[index] = SaleRecord(
-          date: newDate,
-          customerName: newCustomerName,
-          amount: newAmount,
-          description: newDescription,
-          id: saleRecord.id,
+
+      final result = await _saleService.updateSale(updatedSale);
+
+      if (result != null) {
+        // Satış geçmişini yenile
+        await _loadSalesHistory();
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Satış kaydı başarıyla güncellendi!'),
+              backgroundColor: Colors.green,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Satış kaydı güncellenirken hata: $e'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
         );
       }
-    });
-
-    // Başarılı mesaj göster
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Satış kaydı başarıyla güncellendi!'),
-        backgroundColor: Colors.green,
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
   }
 
   // Satış kaydını sil
-  void _deleteSaleRecord(SaleRecord sale) {
-    setState(() {
-      _salesHistory.removeWhere((sale) => sale.id == sale.id);
-    });
+  Future<void> _deleteSaleRecord(SaleRecord sale) async {
+    try {
+      setState(() {
+        _isLoading = true;
+      });
 
-    // Başarılı mesaj göster
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Satış kaydı başarıyla silindi!'),
-        backgroundColor: Colors.red,
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
+      final success = await _saleService.deleteSale(sale.id);
+
+      if (success) {
+        // Satış geçmişini yenile
+        await _loadSalesHistory();
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Satış kaydı başarıyla silindi!'),
+              backgroundColor: Colors.green,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Satış kaydı silinirken hata: $e'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
   }
 
-  // Toplam mesai süresini hesapla
+    // Toplam mesai süresini hesapla
   Duration _calculateTotalShiftDuration() {
-    int totalMinutes = 0;
-
+    int totalSeconds = 0;
+    
     for (var shift in _shiftHistory) {
-      totalMinutes += shift.duration.inMinutes;
+      if (shift.endTime != null && shift.duration != null) {
+        totalSeconds += shift.duration!.inSeconds;
+      }
     }
 
-    return Duration(minutes: totalMinutes);
+    return Duration(seconds: totalSeconds);
+  }
+
+  // Toplam mesai süresi metni
+  String _getTotalShiftDurationText() {
+    final duration = _calculateTotalShiftDuration();
+    final hours = duration.inHours;
+    final minutes = duration.inMinutes % 60;
+    final seconds = duration.inSeconds % 60;
+    return '${hours} sa ${minutes} dk ${seconds} sn';
   }
 
   // Toplam satış tutarını hesapla
-  double _calculateTotalSales() {
+  double _getTotalSales() {
     return _salesHistory.fold(0.0, (sum, sale) => sum + sale.amount);
   }
 
   @override
   Widget build(BuildContext context) {
-    final totalShiftDuration = _calculateTotalShiftDuration();
-    final totalSales = _calculateTotalSales();
+    if (_isLoading) {
+      return Scaffold(
+        backgroundColor: AppTheme.backgroundColor,
+        body: const Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(height: 16),
+              Text('Profil yükleniyor...'),
+            ],
+          ),
+        ),
+      );
+    }
 
     return Scaffold(
       backgroundColor: AppTheme.backgroundColor,
@@ -313,14 +678,6 @@ class _ProfileScreenState extends State<ProfileScreen>
                               style: TextStyle(
                                 fontSize: 14,
                                 color: Colors.grey.shade600,
-                              ),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              'ID: $_staffId',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.grey.shade500,
                               ),
                             ),
                           ],
@@ -386,8 +743,9 @@ class _ProfileScreenState extends State<ProfileScreen>
                           icon: Icons.watch_later_outlined,
                           iconColor: AppTheme.primaryColor,
                           title: 'Toplam Mesai',
-                          value:
-                              '${totalShiftDuration.inHours} sa ${totalShiftDuration.inMinutes % 60} dk',
+                          value: _isLoadingShifts 
+                              ? 'Yükleniyor...'
+                              : _getTotalShiftDurationText(),
                         ),
                       ),
                       const SizedBox(width: 12),
@@ -398,7 +756,9 @@ class _ProfileScreenState extends State<ProfileScreen>
                           icon: Icons.monetization_on_outlined,
                           iconColor: Colors.green.shade700,
                           title: 'Toplam Satış',
-                          value: '${totalSales.toStringAsFixed(2)} ₺',
+                          value: _isLoadingSales 
+                              ? 'Yükleniyor...'
+                              : '${_getTotalSales().toStringAsFixed(2)} ₺',
                         ),
                       ),
                     ],
@@ -462,7 +822,15 @@ class _ProfileScreenState extends State<ProfileScreen>
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton.icon(
-                      onPressed: _isShiftActive ? _endShift : _startShift,
+                      onPressed: () {
+                        print('Mesai butonuna basıldı - _isShiftActive: $_isShiftActive');
+                        print('Current user: $_currentUser');
+                        if (_isShiftActive) {
+                          _endShift();
+                        } else {
+                          _startShift();
+                        }
+                      },
                       icon: Icon(
                         _isShiftActive ? Icons.exit_to_app : Icons.play_arrow,
                       ),
@@ -475,6 +843,26 @@ class _ProfileScreenState extends State<ProfileScreen>
                                 ? Colors.red.shade600
                                 : AppTheme.primaryColor,
                         foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  // Çıkış Yap Butonu
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: () => _showLogoutDialog(),
+                      icon: const Icon(Icons.logout, size: 20),
+                      label: const Text('Çıkış Yap'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.red.shade600,
+                        side: BorderSide(color: Colors.red.shade300),
                         padding: const EdgeInsets.symmetric(vertical: 12),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
@@ -558,6 +946,19 @@ class _ProfileScreenState extends State<ProfileScreen>
 
   // Mesai geçmişi listesi
   Widget _buildShiftHistoryList() {
+    if (_isLoadingShifts) {
+      return const Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(height: 16),
+            Text('Mesai geçmişi yükleniyor...'),
+          ],
+        ),
+      );
+    }
+
     if (_shiftHistory.isEmpty) {
       return _buildEmptyState(
         'Mesai Kaydı Bulunamadı',
@@ -565,11 +966,14 @@ class _ProfileScreenState extends State<ProfileScreen>
       );
     }
 
+    // Sadece bitmiş mesaileri göster
+    final completedShifts = _shiftHistory.where((shift) => shift.endTime != null).toList();
+    
     return ListView.builder(
       padding: const EdgeInsets.all(16),
-      itemCount: _shiftHistory.length,
+      itemCount: completedShifts.length,
       itemBuilder: (context, index) {
-        final shift = _shiftHistory[index];
+        final shift = completedShifts[index];
 
         return Card(
           margin: const EdgeInsets.only(bottom: 12),
@@ -680,7 +1084,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                         icon: Icons.logout,
                         iconColor: Colors.red.shade600,
                         title: 'Bitiş',
-                        time: shift.endTime,
+                        time: shift.endTime!,
                       ),
                     ),
 
@@ -713,7 +1117,9 @@ class _ProfileScreenState extends State<ProfileScreen>
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            '${shift.duration.inHours} sa ${shift.duration.inMinutes % 60} dk',
+                            shift.duration != null 
+                                ? '${shift.duration!.inHours} sa ${shift.duration!.inMinutes % 60} dk ${shift.duration!.inSeconds % 60} sn'
+                                : 'Devam ediyor',
                             style: const TextStyle(
                               fontSize: 14,
                               fontWeight: FontWeight.bold,
@@ -734,6 +1140,19 @@ class _ProfileScreenState extends State<ProfileScreen>
 
   // Satış geçmişi listesi
   Widget _buildSalesHistoryList() {
+    if (_isLoadingSales) {
+      return const Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(height: 16),
+            Text('Satış geçmişi yükleniyor...'),
+          ],
+        ),
+      );
+    }
+
     if (_salesHistory.isEmpty) {
       return _buildEmptyState(
         'Satış Kaydı Bulunamadı',
@@ -759,18 +1178,18 @@ class _ProfileScreenState extends State<ProfileScreen>
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Fiyat ikonu
+                // Satış tipine göre ikon
                 Container(
                   width: 40,
                   height: 40,
                   decoration: BoxDecoration(
-                    color: Colors.green.shade50,
+                    color: _getSaleTypeColor(sale).withOpacity(0.1),
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Center(
                     child: Icon(
-                      Icons.payment,
-                      color: Colors.green.shade600,
+                      _getSaleTypeIcon(sale),
+                      color: _getSaleTypeColor(sale),
                       size: 20,
                     ),
                   ),
@@ -811,7 +1230,27 @@ class _ProfileScreenState extends State<ProfileScreen>
                           color: Colors.grey.shade600,
                         ),
                       ),
-                      const SizedBox(height: 6),
+                      const SizedBox(height: 4),
+                      // Ödeme yöntemi
+                      if (sale.paymentMethod != null)
+                        Row(
+                          children: [
+                            Icon(
+                              _getPaymentMethodIcon(sale.paymentMethod!),
+                              size: 14,
+                              color: Colors.grey.shade600,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              _getPaymentMethodText(sale.paymentMethod!),
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey.shade600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      const SizedBox(height: 4),
                       Text(
                         DateFormat(
                           'd MMM yyyy, HH:mm',
@@ -953,7 +1392,9 @@ class _ProfileScreenState extends State<ProfileScreen>
       text: DateFormat('dd/MM/yyyy HH:mm', 'tr_TR').format(shift.startTime),
     );
     final endTimeController = TextEditingController(
-      text: DateFormat('dd/MM/yyyy HH:mm', 'tr_TR').format(shift.endTime),
+      text: shift.endTime != null 
+          ? DateFormat('dd/MM/yyyy HH:mm', 'tr_TR').format(shift.endTime!)
+          : '',
     );
 
     DateTime? newStartTime = shift.startTime;
@@ -1157,7 +1598,9 @@ class _ProfileScreenState extends State<ProfileScreen>
                       if (pickedDate != null) {
                         final pickedTime = await showTimePicker(
                           context: context,
-                          initialTime: TimeOfDay.fromDateTime(shift.endTime),
+                          initialTime: shift.endTime != null 
+                              ? TimeOfDay.fromDateTime(shift.endTime!)
+                              : TimeOfDay.now(),
                           builder: (context, child) {
                             return Theme(
                               data: ThemeData.light().copyWith(
@@ -1182,10 +1625,12 @@ class _ProfileScreenState extends State<ProfileScreen>
                             pickedTime.minute,
                           );
 
-                          endTimeController.text = DateFormat(
-                            'dd/MM/yyyy HH:mm',
-                            'tr_TR',
-                          ).format(newEndTime!);
+                          if (newEndTime != null) {
+                            endTimeController.text = DateFormat(
+                              'dd/MM/yyyy HH:mm',
+                              'tr_TR',
+                            ).format(newEndTime!);
+                          }
                           setState(() {});
                         }
                       }
@@ -1209,10 +1654,12 @@ class _ProfileScreenState extends State<ProfileScreen>
                           ),
                           const SizedBox(width: 10),
                           Text(
-                            DateFormat(
-                              'dd MMMM yyyy',
-                              'tr_TR',
-                            ).format(newEndTime!),
+                            newEndTime != null 
+                                ? DateFormat(
+                                    'dd MMMM yyyy',
+                                    'tr_TR',
+                                  ).format(newEndTime!)
+                                : 'Tarih seçin',
                             style: TextStyle(
                               fontSize: 14,
                               color: Colors.grey.shade800,
@@ -1226,7 +1673,9 @@ class _ProfileScreenState extends State<ProfileScreen>
                           ),
                           const SizedBox(width: 10),
                           Text(
-                            DateFormat('HH:mm', 'tr_TR').format(newEndTime!),
+                            newEndTime != null 
+                                ? DateFormat('HH:mm', 'tr_TR').format(newEndTime!)
+                                : 'Saat seçin',
                             style: TextStyle(
                               fontSize: 14,
                               fontWeight: FontWeight.w500,
@@ -1266,7 +1715,9 @@ class _ProfileScreenState extends State<ProfileScreen>
                             ),
                           ),
                           Text(
-                            '${newEndTime!.difference(newStartTime!).inHours} saat ${newEndTime!.difference(newStartTime!).inMinutes % 60} dakika',
+                            newStartTime != null && newEndTime != null
+                                ? '${newEndTime!.difference(newStartTime!).inHours} saat ${newEndTime!.difference(newStartTime!).inMinutes % 60} dakika'
+                                : 'Süre hesaplanamıyor',
                             style: TextStyle(
                               fontSize: 13,
                               fontWeight: FontWeight.bold,
@@ -1319,6 +1770,15 @@ class _ProfileScreenState extends State<ProfileScreen>
                                 ),
                               );
                             }
+                          } else {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  'Lütfen başlangıç ve bitiş zamanlarını seçin!',
+                                ),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
                           }
                         },
                         style: ElevatedButton.styleFrom(
@@ -1472,7 +1932,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                             ),
                             const SizedBox(width: 8),
                             Text(
-                              '${DateFormat('HH:mm', 'tr_TR').format(shift.startTime)} - ${DateFormat('HH:mm', 'tr_TR').format(shift.endTime)}',
+                              '${DateFormat('HH:mm', 'tr_TR').format(shift.startTime)} - ${shift.endTime != null ? DateFormat('HH:mm', 'tr_TR').format(shift.endTime!) : 'Devam ediyor'}',
                               style: const TextStyle(
                                 fontWeight: FontWeight.bold,
                               ),
@@ -1491,7 +1951,9 @@ class _ProfileScreenState extends State<ProfileScreen>
                             ),
                             const SizedBox(width: 8),
                             Text(
-                              'Toplam: ${shift.duration.inHours} saat ${shift.duration.inMinutes % 60} dakika',
+                              shift.duration != null 
+                                  ? 'Toplam: ${shift.duration!.inHours} saat ${shift.duration!.inMinutes % 60} dakika ${shift.duration!.inSeconds % 60} saniye'
+                                  : 'Süre hesaplanamıyor',
                               style: TextStyle(
                                 fontWeight: FontWeight.bold,
                                 color: Colors.blue.shade700,
@@ -1678,10 +2140,12 @@ class _ProfileScreenState extends State<ProfileScreen>
                               pickedTime.minute,
                             );
 
-                            dateController.text = DateFormat(
-                              'dd/MM/yyyy HH:mm',
-                              'tr_TR',
-                            ).format(newDate!);
+                            if (newDate != null) {
+                              dateController.text = DateFormat(
+                                'dd/MM/yyyy HH:mm',
+                                'tr_TR',
+                              ).format(newDate!);
+                            }
                             setState(() {});
                           }
                         }
@@ -1705,10 +2169,12 @@ class _ProfileScreenState extends State<ProfileScreen>
                             ),
                             const SizedBox(width: 10),
                             Text(
-                              DateFormat(
-                                'dd MMMM yyyy',
-                                'tr_TR',
-                              ).format(newDate!),
+                              newDate != null 
+                                  ? DateFormat(
+                                      'dd MMMM yyyy',
+                                      'tr_TR',
+                                    ).format(newDate!)
+                                  : 'Tarih seçin',
                               style: TextStyle(
                                 fontSize: 14,
                                 color: Colors.grey.shade800,
@@ -1722,7 +2188,9 @@ class _ProfileScreenState extends State<ProfileScreen>
                             ),
                             const SizedBox(width: 10),
                             Text(
-                              DateFormat('HH:mm', 'tr_TR').format(newDate!),
+                              newDate != null 
+                                  ? DateFormat('HH:mm', 'tr_TR').format(newDate!)
+                                  : 'Saat seçin',
                               style: TextStyle(
                                 fontSize: 14,
                                 fontWeight: FontWeight.w500,
@@ -1924,14 +2392,23 @@ class _ProfileScreenState extends State<ProfileScreen>
                               return;
                             }
 
-                            Navigator.of(context).pop();
-                            _editSaleRecord(
-                              sale,
-                              newDate!,
-                              customerNameController.text,
-                              amount,
-                              descriptionController.text,
-                            );
+                            if (newDate != null) {
+                              Navigator.of(context).pop();
+                              _editSaleRecord(
+                                sale,
+                                newDate!,
+                                customerNameController.text,
+                                amount,
+                                descriptionController.text,
+                              );
+                            } else {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Lütfen tarih seçin!'),
+                                  backgroundColor: Colors.red,
+                                ),
+                              );
+                            }
                           },
                           style: ElevatedButton.styleFrom(
                             backgroundColor: AppTheme.primaryColor,
@@ -1954,6 +2431,301 @@ class _ProfileScreenState extends State<ProfileScreen>
             ),
           ),
     );
+  }
+
+  // Çıkış yapma diyaloğu
+  void _showLogoutDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+        elevation: 8,
+        backgroundColor: Colors.white,
+        child: Container(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Başlık
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.red.shade100,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(
+                      Icons.logout,
+                      color: Colors.red.shade700,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  const Text(
+                    'Çıkış Yap',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+              const Divider(),
+              const SizedBox(height: 16),
+
+              // Uyarı metni
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.red.shade50,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.red.shade100),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.warning_amber_rounded,
+                      color: Colors.red.shade700,
+                      size: 24,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'Uygulamadan çıkış yapmak istediğinize emin misiniz?',
+                        style: TextStyle(
+                          color: Colors.red.shade800,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 20),
+
+              // Personel bilgileri
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade50,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.grey.shade200),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Çıkış Yapılacak Hesap',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.grey.shade700,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+
+                    // Personel adı
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.person,
+                          size: 16,
+                          color: Colors.grey.shade600,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          _staffName,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+
+                    // Pozisyon
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.work,
+                          size: 16,
+                          color: Colors.grey.shade600,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          _staffPosition,
+                          style: TextStyle(
+                            color: Colors.grey.shade700,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 24),
+              const Divider(),
+              const SizedBox(height: 16),
+
+              // Butonlar
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  OutlinedButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 10,
+                      ),
+                      side: BorderSide(color: Colors.grey.shade300),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                    child: Text(
+                      'Vazgeç',
+                      style: TextStyle(color: Colors.grey.shade700),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  ElevatedButton.icon(
+                    onPressed: () {
+                      Navigator.of(context).pop();
+                      _logout();
+                    },
+                    icon: const Icon(Icons.logout, size: 18),
+                    label: const Text('Çıkış Yap'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.red.shade600,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 10,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // Çıkış yapma işlemi
+  void _logout() async {
+    // Mesai aktifse uyarı göster
+    if (_isShiftActive) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Aktif mesainiz var! Önce mesai çıkışı yapın.'),
+          backgroundColor: Colors.orange.shade600,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    try {
+      // Firebase Auth ile çıkış yap
+      await FirebaseAuth.instance.signOut();
+
+      if (mounted) {
+        // Başarılı çıkış mesajı göster
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Başarıyla çıkış yapıldı!'),
+            backgroundColor: Colors.green.shade600,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+
+        // Login ekranına yönlendir
+        Navigator.pushNamedAndRemoveUntil(
+          context,
+          '/',
+          (route) => false,
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Çıkış yapılırken hata oluştu: $e'),
+            backgroundColor: Colors.red.shade600,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
+  }
+
+  // Satış tipine göre ikon
+  IconData _getSaleTypeIcon(SaleRecord sale) {
+    // Masa siparişi için her zaman yemek ikonu
+    if (sale.description.toLowerCase().contains('masa') || 
+        sale.description.toLowerCase().contains('sipariş') ||
+        sale.description.toLowerCase().contains('pasta') ||
+        sale.description.toLowerCase().contains('içecek') ||
+        sale.description.toLowerCase().contains('yemek')) {
+      return Icons.restaurant;
+    } else if (sale.description.toLowerCase().contains('oyun') || 
+               sale.description.toLowerCase().contains('giriş')) {
+      return Icons.games;
+    }
+    return Icons.payment;
+  }
+
+  // Satış tipine göre renk
+  Color _getSaleTypeColor(SaleRecord sale) {
+    if (sale.description.toLowerCase().contains('masa') || 
+        sale.description.toLowerCase().contains('sipariş')) {
+      return Colors.orange.shade600;
+    } else if (sale.description.toLowerCase().contains('oyun') || 
+               sale.description.toLowerCase().contains('giriş')) {
+      return Colors.blue.shade600;
+    }
+    return Colors.green.shade600;
+  }
+
+  // Ödeme yöntemi ikonu
+  IconData _getPaymentMethodIcon(String paymentMethod) {
+    switch (paymentMethod.toLowerCase()) {
+      case 'nakit':
+      case 'cash':
+        return Icons.money;
+      case 'kart':
+      case 'card':
+        return Icons.credit_card;
+      default:
+        return Icons.payment;
+    }
+  }
+
+  // Ödeme yöntemi metni
+  String _getPaymentMethodText(String paymentMethod) {
+    switch (paymentMethod.toLowerCase()) {
+      case 'nakit':
+      case 'cash':
+        return 'Nakit';
+      case 'kart':
+      case 'card':
+        return 'Kart';
+      default:
+        return paymentMethod;
+    }
   }
 
   // Satış silme diyaloğu
@@ -2194,31 +2966,4 @@ class _ProfileScreenState extends State<ProfileScreen>
   }
 }
 
-// Mesai kaydı sınıfı
-class ShiftRecord {
-  final DateTime startTime;
-  final DateTime endTime;
-  final String id;
 
-  ShiftRecord({required this.startTime, required this.endTime, String? id})
-    : this.id = id ?? DateTime.now().millisecondsSinceEpoch.toString();
-
-  Duration get duration => endTime.difference(startTime);
-}
-
-// Satış kaydı sınıfı
-class SaleRecord {
-  final DateTime date;
-  final String customerName;
-  final double amount;
-  final String description;
-  final String id;
-
-  SaleRecord({
-    required this.date,
-    required this.customerName,
-    required this.amount,
-    required this.description,
-    String? id,
-  }) : this.id = id ?? DateTime.now().millisecondsSinceEpoch.toString();
-}

@@ -37,6 +37,15 @@ class _SalesScreenState extends State<SalesScreen> {
   void initState() {
     super.initState();
     _loadCustomers();
+    
+    // Customer repository stream'ini dinle
+    widget.customerRepository.customersStream.listen((customers) {
+      if (mounted) {
+        setState(() {
+          _cachedCustomers = customers;
+        });
+      }
+    });
   }
 
   @override
@@ -101,11 +110,20 @@ class _SalesScreenState extends State<SalesScreen> {
           ) ||
           customer.parentName.toLowerCase().contains(
             _searchQuery.toLowerCase(),
-          ) ||
-          customer.ticketNumber.toString().contains(_searchQuery);
+          );
 
       return isInDateRange && matchesSearch;
     }).toList();
+  }
+
+  // Cache'i temizle ve yeniden yükle
+  Future<void> _clearCacheAndReload() async {
+    setState(() {
+      _cachedCustomers.clear();
+      _isLoading = true;
+    });
+    
+    await _loadCustomers();
   }
 
   // Müşterileri sırala
@@ -190,9 +208,44 @@ class _SalesScreenState extends State<SalesScreen> {
     }
   }
 
-  // Toplam müşteri sayısını hesapla
+  // Toplam müşteri sayısını hesapla (childCount'a göre)
   int _calculateTotalCustomers() {
-    return _getFilteredCustomers().length;
+    final customers = _getFilteredCustomers();
+    int totalCount = 0;
+    
+    for (var customer in customers) {
+      totalCount += customer.childCount;
+    }
+    
+    return totalCount;
+  }
+
+  // Aktif müşteri sayısını hesapla (childCount'a göre)
+  int _calculateActiveCustomers() {
+    final customers = _getFilteredCustomers();
+    int activeCount = 0;
+    
+    for (var customer in customers) {
+      if (!customer.isCompleted && customer.remainingTime.inSeconds > 0) {
+        activeCount += customer.childCount;
+      }
+    }
+    
+    return activeCount;
+  }
+
+  // Tamamlanan müşteri sayısını hesapla (childCount'a göre)
+  int _calculateCompletedCustomers() {
+    final customers = _getFilteredCustomers();
+    int completedCount = 0;
+    
+    for (var customer in customers) {
+      if (customer.isCompleted) {
+        completedCount += customer.childCount;
+      }
+    }
+    
+    return completedCount;
   }
 
   // Ortalama giriş süresini hesapla (saniye hassasiyeti ile)
@@ -313,7 +366,7 @@ class _SalesScreenState extends State<SalesScreen> {
                           icon: Icons.play_circle,
                           iconColor: Colors.green.shade700,
                           title: 'Aktif',
-                          value: sortedCustomers.where((c) => !c.isCompleted && c.remainingTime.inSeconds > 0).length.toString(),
+                          value: _calculateActiveCustomers().toString(),
                         ),
                       ),
                     ],
@@ -329,7 +382,7 @@ class _SalesScreenState extends State<SalesScreen> {
                           icon: Icons.check_circle,
                           iconColor: Colors.blue.shade700,
                           title: 'Tamamlanan',
-                          value: sortedCustomers.where((c) => c.isCompleted).length.toString(),
+                          value: _calculateCompletedCustomers().toString(),
                         ),
                       ),
                       SizedBox(width: MediaQuery.of(context).size.width < 400 ? 8 : 12),
@@ -345,6 +398,8 @@ class _SalesScreenState extends State<SalesScreen> {
                       ),
                     ],
                   ),
+
+
 
                   const SizedBox(height: 16),
 
@@ -481,24 +536,13 @@ class _SalesScreenState extends State<SalesScreen> {
                           final customer = sortedCustomers[index];
 
                           // Her müşteri için, toplam ve kalan süre
-                          final totalTime = customer.initialTime; // Girişte sistemde var olan süre
+                          final totalTime = customer.originalDurationMinutes > 0 
+                              ? Duration(minutes: customer.originalDurationMinutes) // Orijinal alınan süre
+                              : customer.initialTime; // Eski sistem için fallback
                           final remainingTime = customer.remainingTime;
                           
-                          // Kullanılan süreyi hesapla (saniye hassasiyeti ile)
-                          Duration usedDuration;
-                          if (customer.isCompleted && customer.completedTime != null) {
-                            // Tamamlanmış müşteri için: tamamlanma zamanı - giriş zamanı
-                            usedDuration = customer.completedTime!.difference(customer.entryTime);
-                          } else {
-                            // Aktif müşteri için: şu an - giriş zamanı
-                            final now = DateTime.now();
-                            usedDuration = now.difference(customer.entryTime);
-                          }
-                          
-                          // Kullanılan süre, toplam süreyi geçemez
-                          if (usedDuration > totalTime) {
-                            usedDuration = totalTime;
-                          }
+                          // Kullanılan süreyi al (sabit değer - akış yok)
+                          final usedDuration = customer.usedTime;
                           
                           // Çıkış zamanı (tamamlanma zamanı varsa onu kullan, yoksa hesaplanan çıkış zamanı)
                           final actualExitTime = customer.isCompleted && customer.completedTime != null
@@ -582,30 +626,18 @@ class _SalesScreenState extends State<SalesScreen> {
                                           vertical: 4,
                                         ),
                                         decoration: BoxDecoration(
-                                          color: customer.isCompleted 
-                                              ? Colors.green.shade50 
-                                              : Colors.blue.shade50,
+                                          color: _getCustomerStatusContainerColor(customer, remainingTime),
                                           borderRadius: BorderRadius.circular(8),
                                           border: Border.all(
-                                            color: customer.isCompleted 
-                                                ? Colors.green.shade200 
-                                                : Colors.blue.shade200,
+                                            color: _getCustomerStatusBorderColor(customer, remainingTime),
                                           ),
                                         ),
                                         child: Text(
-                                          customer.isCompleted 
-                                              ? 'Tamamlandı'
-                                              : remainingTime.inSeconds > 0
-                                                  ? 'Aktif'
-                                                  : 'Süre Doldu',
+                                          _getCustomerStatus(customer, remainingTime),
                                           style: TextStyle(
                                             fontSize: 12,
                                             fontWeight: FontWeight.w500,
-                                            color: customer.isCompleted 
-                                                ? Colors.green.shade700 
-                                                : remainingTime.inSeconds > 0
-                                                    ? Colors.blue.shade700
-                                                    : Colors.red.shade700,
+                                            color: _getCustomerStatusColor(customer, remainingTime),
                                           ),
                                         ),
                                       ),
@@ -699,7 +731,7 @@ class _SalesScreenState extends State<SalesScreen> {
                                                       iconColor: Colors.orange.shade600,
                                                       title: 'Kalan',
                                                       time: null,
-                                                      duration: customer.isCompleted ? Duration.zero : remainingTime,
+                                                      duration: remainingTime,
                                                       isSmall: true,
                                                     ),
                                                   ),
@@ -792,7 +824,7 @@ class _SalesScreenState extends State<SalesScreen> {
                                                   iconColor: Colors.orange.shade600,
                                                   title: 'Kalan',
                                                   time: null,
-                                                  duration: customer.isCompleted ? Duration.zero : remainingTime,
+                                                                                                        duration: remainingTime,
                                                   isSmall: false,
                                                 ),
                                               ),
@@ -1037,5 +1069,45 @@ class _SalesScreenState extends State<SalesScreen> {
         ],
       ),
     );
+  }
+
+  String _getCustomerStatus(Customer customer, Duration remainingTime) {
+    if (customer.isCompleted) {
+      return 'Tamamlandı';
+    } else if (remainingTime.inSeconds <= 0) {
+      return 'Süre Bitti';
+    } else {
+      return 'Aktif';
+    }
+  }
+
+  Color _getCustomerStatusColor(Customer customer, Duration remainingTime) {
+    if (customer.isCompleted) {
+      return Colors.green.shade700;
+    } else if (remainingTime.inSeconds <= 0) {
+      return Colors.red.shade700;
+    } else {
+      return Colors.blue.shade700;
+    }
+  }
+
+  Color _getCustomerStatusContainerColor(Customer customer, Duration remainingTime) {
+    if (customer.isCompleted) {
+      return Colors.green.shade50;
+    } else if (remainingTime.inSeconds <= 0) {
+      return Colors.red.shade50;
+    } else {
+      return Colors.blue.shade50; // Aktif durum için mavi
+    }
+  }
+
+  Color _getCustomerStatusBorderColor(Customer customer, Duration remainingTime) {
+    if (customer.isCompleted) {
+      return Colors.green.shade200;
+    } else if (remainingTime.inSeconds <= 0) {
+      return Colors.red.shade200;
+    } else {
+      return Colors.blue.shade200; // Aktif durum için mavi
+    }
   }
 }

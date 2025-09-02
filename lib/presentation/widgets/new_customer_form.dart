@@ -6,6 +6,8 @@ import '../../data/models/customer_model.dart';
 import '../../core/theme/app_theme.dart';
 import '../../data/repositories/customer_repository.dart';
 import '../../core/di/service_locator.dart';
+import '../../data/models/business_settings_model.dart';
+import '../../data/repositories/business_settings_repository.dart';
 
 class NewCustomerForm extends StatefulWidget {
   final Function(Customer) onSave;
@@ -31,17 +33,22 @@ class _NewCustomerFormState extends State<NewCustomerForm>
   final _phoneController = TextEditingController();
   final _ticketNumberController = TextEditingController();
 
-  final List<int> _durationOptions = [30, 60, 90, 120, 180];
   int _selectedDuration = 60;
   bool _isLoading = false;
   late AnimationController _animationController;
   late Animation<double> _animation;
 
-  // Repository referansı
+  // Repository referansları
   late CustomerRepository _customerRepository;
+  late BusinessSettingsRepository _businessSettingsRepository;
 
-  // Bilet numarası için değişken - Artık _tempTicketNumber olarak değiştirildi
-  int _tempTicketNumber = 100; // Geçici bilet numarası
+  // İşletme ayarları
+  BusinessSettings? _oyunAlaniSettings;
+  List<DurationPrice> _availableDurations = [];
+  DurationPrice? _selectedDurationPrice;
+
+  // Bilet numarası için değişken
+  int _nextTicketNumber = 101; // Bir sonraki bilet numarası
   bool _ticketNumberAssigned = false; // Bilet numarası atandı mı?
 
   // Telefon ile arama durumları
@@ -54,9 +61,13 @@ class _NewCustomerFormState extends State<NewCustomerForm>
   void initState() {
     super.initState();
 
-    // Repository'yi al
+    // Repository'leri al
     _customerRepository = widget.customerRepository ??
         ServiceLocator.locator<CustomerRepository>();
+    _businessSettingsRepository = ServiceLocator.locator<BusinessSettingsRepository>();
+
+    // İşletme ayarlarını yükle
+    _loadBusinessSettings();
 
     // Bilet numarasını yükle - SON numarayı gösterme amaçlı
     _loadTempTicketNumber();
@@ -70,9 +81,10 @@ class _NewCustomerFormState extends State<NewCustomerForm>
           widget.initialCustomer!.ticketNumber.toString();
       _ticketNumberAssigned = true; // Düzenleme modunda numara zaten atanmış
     } else {
-      // Yeni kayıt için geçici bilet numarası göster - yüklenene kadar boş bırak
-      _ticketNumberController.text = '...';
+      // Yeni kayıt için geçici olarak 101 göster (yüklenene kadar)
+      _ticketNumberController.text = '101';
       _ticketNumberAssigned = false;
+      _nextTicketNumber = 101; // Başlangıç değeri
     }
 
     _animationController = AnimationController(
@@ -87,33 +99,60 @@ class _NewCustomerFormState extends State<NewCustomerForm>
     _animationController.forward();
   }
 
-  // Son bilet numarasını veritabanından yükle - Gösterme amaçlı
+  // İşletme ayarlarını yükle
+  Future<void> _loadBusinessSettings() async {
+    try {
+      // Oyun Alanı kategorisindeki ayarları al
+      final settings = await _businessSettingsRepository.getBusinessSettingByCategory(
+        BusinessCategory.oyunAlani,
+      );
+      
+      if (settings != null) {
+        setState(() {
+          _oyunAlaniSettings = settings;
+          _availableDurations = settings.durationPrices.where((dp) => dp.isActive).toList();
+          
+          // Varsayılan olarak ilk süreyi seç
+          if (_availableDurations.isNotEmpty) {
+            _selectedDurationPrice = _availableDurations.first;
+            _selectedDuration = _selectedDurationPrice!.duration;
+          }
+        });
+        
+        print('Oyun alanı ayarları yüklendi: ${_availableDurations.length} seçenek');
+      }
+    } catch (e) {
+      print('İşletme ayarları yüklenirken hata: $e');
+    }
+  }
+
+  // Son bilet numarasından bir sonraki numarayı göster
   Future<void> _loadTempTicketNumber() async {
     try {
-      // Son bilet numarasını al, gösterme için +1 ekle
+      // Son bilet numarasını al
       final lastNumber = await _customerRepository.getLastTicketNumber();
-      final nextNumber = lastNumber + 1; // Gösterim için bir sonraki numara
-      print(
-          'NEW_CUSTOMER_FORM: Son bilet numarası: $lastNumber, Gösterilecek: $nextNumber');
+      print('NEW_CUSTOMER_FORM: Firebase\'den alınan son bilet numarası: $lastNumber');
 
       if (mounted) {
         setState(() {
-          _tempTicketNumber = nextNumber; // Sonraki numarayı göster
+          // Bir sonraki bilet numarasını hesapla ve göster
+          _nextTicketNumber = lastNumber + 1;
 
-          // Yeni kayıt formunda (düzenleme değilse) sonraki numarayı göster
+          // Yeni kayıt formunda (düzenleme değilse) bir sonraki numarayı göster
           if (!_ticketNumberAssigned) {
-            _ticketNumberController.text = nextNumber.toString();
+            _ticketNumberController.text = _nextTicketNumber.toString();
+            print('NEW_CUSTOMER_FORM: Bir sonraki bilet numarası gösteriliyor: $_nextTicketNumber');
           }
         });
       }
     } catch (e) {
       print('NEW_CUSTOMER_FORM: Bilet numarası yüklenirken hata: $e');
-      // Hata durumunda basit değer
+      // Hata durumunda varsayılan değer
       if (mounted) {
         setState(() {
-          _tempTicketNumber = 101; // Varsayılan numarayı göster
+          _nextTicketNumber = 101; // Varsayılan bir sonraki numara
 
-          // Yeni kayıt formunda (düzenleme değilse) varsayılan numarayı göster
+          // Yeni kayıt formunda (düzenleme değilse) 101 göster
           if (!_ticketNumberAssigned) {
             _ticketNumberController.text = "101";
           }
@@ -205,26 +244,21 @@ class _NewCustomerFormState extends State<NewCustomerForm>
   void _createNewCustomer() async {
     // Kalan süre bilgisini hesapla
     int finalDuration = _selectedDuration;
-    if (_isUsingRemainingTime && _foundCustomer != null) {
+    int? explicitRemainingSeconds;
+          if (_isUsingRemainingTime && _foundCustomer != null) {
       if (_selectedDuration > 0) {
         // Kalan süreye ek süre ekle
-        // Saniye kısmını da hesaba katalım
         int remainingSecs = _foundCustomer!.remainingTime.inSeconds;
-        int remainingMins = remainingSecs ~/ 60;
-        remainingSecs = remainingSecs % 60;
-
-        // Dakikayı direkt ekle, saniyeyi yuvarla
-        finalDuration += remainingMins;
-        if (remainingSecs >= 30) {
-          finalDuration += 1; // Yarım dakikadan fazlaysa bir dakika daha ekle
-        }
+        int totalSeconds = (_selectedDuration * 60) + remainingSecs; // Toplam saniye
+        
+        // Toplam saniyeyi dakika ve saniyeye çevir
+        finalDuration = totalSeconds ~/ 60;
+        explicitRemainingSeconds = totalSeconds % 60;
       } else {
-        // Sadece kalan süreyi kullan (dakikaya yuvarla)
+        // Sadece kalan süreyi kullan
         int remainingSecs = _foundCustomer!.remainingTime.inSeconds;
-        finalDuration = remainingSecs ~/ 60; // dakikaya çevir
-        if (remainingSecs % 60 >= 30) {
-          finalDuration += 1; // Yarım dakikadan fazlaysa bir dakika daha ekle
-        }
+        finalDuration = remainingSecs ~/ 60;
+        explicitRemainingSeconds = remainingSecs % 60;
       }
     }
 
@@ -236,9 +270,12 @@ class _NewCustomerFormState extends State<NewCustomerForm>
         // Düzenleme modunda, mevcut bilet numarasını kullan
         ticketNumber = widget.initialCustomer!.ticketNumber;
       } else {
-        // Yeni kayıt yapılıyor, her giriş için yeni bilet numarası al
+        // Yeni kayıt yapılıyor, Firebase'de bilet numarasını arttır ve al
         ticketNumber = await _customerRepository.getNextTicketNumber();
-        print('Yeni bilet numarası alındı: $ticketNumber');
+        print('NEW_CUSTOMER_FORM: Firebase\'den yeni bilet numarası alındı: $ticketNumber');
+        
+        // Firebase'de bilet numarası arttırıldı, bir sonraki form açılışında güncel numara gösterilecek
+        print('NEW_CUSTOMER_FORM: Firebase\'de bilet numarası arttırıldı');
       }
 
       // Yeni müşteri oluştur
@@ -248,9 +285,12 @@ class _NewCustomerFormState extends State<NewCustomerForm>
         parentName: _parentNameController.text.trim(),
         phoneNumber: _phoneController.text.trim(),
         entryTime: DateTime.now(), // Şu anki zamanı kullanıyoruz
-        durationMinutes: finalDuration,
+        durationMinutes: finalDuration, // Toplam süre (dakika)
         ticketNumber: ticketNumber,
-        price: 0.0, // Fiyatının ilk halini burada sıfırla
+        price: _isUsingRemainingTime && _selectedDuration == 0 ? 0.0 : (_selectedDurationPrice?.price ?? 0.0), // Sadece kalan süre seçilirse 0, yoksa seçilen süre fiyatı
+        explicitRemainingMinutes: finalDuration, // Toplam süre (dakika)
+        explicitRemainingSeconds: explicitRemainingSeconds, // Kalan saniye
+        originalDurationMinutes: finalDuration, // Toplam süre (dakika)
       );
 
       // Kaydet
@@ -272,6 +312,8 @@ class _NewCustomerFormState extends State<NewCustomerForm>
           duration: Duration(seconds: 2),
         ),
       );
+
+      print('NEW_CUSTOMER_FORM: Kayıt tamamlandı, bilet numarası: $ticketNumber');
     } catch (e) {
       print('Müşteri kaydedilirken hata: $e');
       setState(() {
@@ -291,174 +333,7 @@ class _NewCustomerFormState extends State<NewCustomerForm>
     }
   }
 
-  void _showDurationInputDialog() {
-    final TextEditingController durationController = TextEditingController(
-      text: _selectedDuration.toString(),
-    );
 
-    showDialog(
-      context: context,
-      barrierColor: Colors.black.withOpacity(0.5),
-      builder: (context) {
-        return AlertDialog(
-          backgroundColor: Colors.white,
-          surfaceTintColor: Colors.white,
-          titlePadding: const EdgeInsets.only(
-            left: 20,
-            right: 20,
-            top: 20,
-            bottom: 0,
-          ),
-          contentPadding: const EdgeInsets.all(20),
-          title: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: AppTheme.primaryColor.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Icon(
-                  Icons.timer_rounded,
-                  color: AppTheme.primaryColor,
-                  size: 18,
-                ),
-              ),
-              const SizedBox(width: 10),
-              const Text(
-                'Süre Girişi',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-              ),
-            ],
-          ),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              TextField(
-                controller: durationController,
-                keyboardType: TextInputType.number,
-                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  fontSize: 28,
-                  fontWeight: FontWeight.bold,
-                  color: AppTheme.primaryColor,
-                ),
-                decoration: InputDecoration(
-                  hintText: 'Dakika',
-                  suffixText: 'dk',
-                  filled: true,
-                  fillColor: AppTheme.primaryColor.withOpacity(0.05),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide.none,
-                  ),
-                  contentPadding: const EdgeInsets.symmetric(
-                    vertical: 14,
-                    horizontal: 12,
-                  ),
-                ),
-                autofocus: true,
-              ),
-              const SizedBox(height: 16),
-              const Text(
-                'Önerilen Süreler',
-                style: TextStyle(
-                  fontSize: 13,
-                  color: AppTheme.secondaryTextColor,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 6,
-                runSpacing: 6,
-                children: [15, 30, 45, 60, 90, 120, 180].map((duration) {
-                  final isRecommended = duration == 60;
-                  return GestureDetector(
-                    onTap: () {
-                      durationController.text = duration.toString();
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        color: isRecommended
-                            ? AppTheme.primaryColor.withOpacity(0.15)
-                            : AppTheme.primaryColor.withOpacity(0.05),
-                        borderRadius: BorderRadius.circular(8),
-                        border: isRecommended
-                            ? Border.all(
-                                color: AppTheme.primaryColor.withOpacity(
-                                  0.3,
-                                ),
-                              )
-                            : null,
-                      ),
-                      child: Text(
-                        '$duration dk',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight:
-                              isRecommended ? FontWeight.w600 : FontWeight.w500,
-                          color: AppTheme.primaryColor,
-                        ),
-                      ),
-                    ),
-                  );
-                }).toList(),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('İptal'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                final newDuration = int.tryParse(durationController.text);
-                if (newDuration != null && newDuration >= 5) {
-                  setState(() {
-                    _selectedDuration = newDuration;
-                  });
-                  Navigator.pop(context);
-                }
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppTheme.primaryColor,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 10,
-                ),
-              ),
-              child: const Text('Kaydet'),
-            ),
-          ],
-          actionsPadding: const EdgeInsets.symmetric(
-            horizontal: 20,
-            vertical: 10,
-          ),
-        );
-      },
-    );
-  }
-
-  void _adjustDuration(int amount) {
-    setState(() {
-      _selectedDuration = (_selectedDuration + amount).clamp(15, 240);
-    });
-  }
 
   Future<void> _searchCustomerByPhone() async {
     // Telefon alanının boş olup olmadığını kontrol et
@@ -510,8 +385,8 @@ class _NewCustomerFormState extends State<NewCustomerForm>
           _foundCustomer = null;
         });
 
-        // Yeni müşteri bildirimi
-        _showNewCustomerNotification();
+        // Alert kaldırıldı - zaten ekranda form alanları var
+        // _showNewCustomerNotification();
         return;
       }
 
@@ -611,49 +486,6 @@ class _NewCustomerFormState extends State<NewCustomerForm>
     }
   }
 
-  // Yeni müşteri bildirimi göster
-  void _showNewCustomerNotification() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Row(
-          children: [
-            Icon(Icons.person_add, color: Colors.orange),
-            SizedBox(width: 8),
-            Text('Yeni Müşteri'),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Bu telefon numarası ilk defa giriş yapıyor.',
-              style: TextStyle(fontSize: 16),
-            ),
-            SizedBox(height: 12),
-            Text(
-              'Lütfen çocuk ve ebeveyn adını giriniz.',
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                color: AppTheme.primaryColor,
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: Text('Tamam'),
-          ),
-        ],
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
-      ),
-    );
-  }
-
   // Telefon numarasını standart formatta düzenler (sadece rakam)
   String _normalizePhoneNumber(String phone) {
     return phone.replaceAll(RegExp(r'[^0-9]'), '');
@@ -672,10 +504,7 @@ class _NewCustomerFormState extends State<NewCustomerForm>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Başlık ve Bilet Numarası
-                _buildHeader(),
 
-                const SizedBox(height: 16),
 
                 // Kişisel Bilgiler Kartı
                 _buildPersonalInfoCard(),
@@ -685,7 +514,12 @@ class _NewCustomerFormState extends State<NewCustomerForm>
                 // Süre Seçimi Kartı
                 _buildDurationCard(),
 
-                const SizedBox(height: 16),
+                const SizedBox(height: 12),
+
+                // Ödenecek Tutar Bilgisi
+                if (_selectedDurationPrice != null || (_isUsingRemainingTime && _selectedDuration == 0)) _buildPaymentInfoCard(),
+
+                const SizedBox(height: 12),
 
                 // Kaydet Butonu
                 _buildSaveButton(),
@@ -697,110 +531,7 @@ class _NewCustomerFormState extends State<NewCustomerForm>
     );
   }
 
-  Widget _buildHeader() {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        // Logo ve Başlık
-        Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: AppTheme.primaryColor,
-                borderRadius: BorderRadius.circular(16),
-                boxShadow: [
-                  BoxShadow(
-                    color: AppTheme.primaryColor.withOpacity(0.3),
-                    blurRadius: 8,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: const Icon(
-                Icons.sports_kabaddi_rounded,
-                color: Colors.white,
-                size: 24,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'OyunLab',
-                  style: TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                    color: AppTheme.primaryColor,
-                  ),
-                ),
-                Text(
-                  'Yeni Kayıt',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: AppTheme.secondaryTextColor,
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
 
-        // Bilet Numarası
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.05),
-                blurRadius: 10,
-                offset: const Offset(0, 2),
-              ),
-            ],
-          ),
-          child: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: AppTheme.primaryColor.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: const Icon(
-                  Icons.confirmation_number_rounded,
-                  color: AppTheme.primaryColor,
-                  size: 16,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Bilet No',
-                    style: TextStyle(
-                      fontSize: 10,
-                      color: AppTheme.secondaryTextColor,
-                    ),
-                  ),
-                  Text(
-                    '#${_ticketNumberController.text}',
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
 
   Widget _buildPersonalInfoCard() {
     return Card(
@@ -816,23 +547,64 @@ class _NewCustomerFormState extends State<NewCustomerForm>
           children: [
             // Başlık
             Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: AppTheme.primaryColor.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: const Icon(
-                    Icons.person_rounded,
-                    color: AppTheme.primaryColor,
-                    size: 20,
-                  ),
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: AppTheme.primaryColor.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(
+                        Icons.person_rounded,
+                        color: AppTheme.primaryColor,
+                        size: 20,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    const Text(
+                      'Kişi Bilgileri',
+                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 10),
-                const Text(
-                  'Kişi Bilgileri',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                
+                // Bilet Numarası
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AppTheme.primaryColor.withOpacity(0.3)),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.05),
+                        blurRadius: 4,
+                        offset: const Offset(0, 1),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.confirmation_number_rounded,
+                        color: AppTheme.primaryColor,
+                        size: 16,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        '#${_ticketNumberController.text}',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: AppTheme.primaryColor,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ),
@@ -994,8 +766,8 @@ class _NewCustomerFormState extends State<NewCustomerForm>
                         Expanded(
                           child: Text(
                             _foundCustomer!.remainingTime.inSeconds > 0
-                                ? 'Kalan süre: ${_foundCustomer!.remainingTime.inMinutes} dk'
-                                : 'Kalan süre: 0 dk',
+                                ? 'Kalan süre: ${_foundCustomer!.remainingTime.inMinutes}:${(_foundCustomer!.remainingTime.inSeconds % 60).toString().padLeft(2, '0')}'
+                                : 'Kalan süre: 00:00',
                             style: TextStyle(
                               fontWeight: FontWeight.bold,
                               color: _foundCustomer!.remainingTime.inSeconds > 0
@@ -1022,6 +794,7 @@ class _NewCustomerFormState extends State<NewCustomerForm>
                               setState(() {
                                 _isUsingRemainingTime = true;
                                 _selectedDuration = 0;
+                                _selectedDurationPrice = null; // Sadece kalan süre seçildiğinde fiyat null
                               });
                             },
                           ),
@@ -1038,6 +811,11 @@ class _NewCustomerFormState extends State<NewCustomerForm>
                                 if (_selectedDuration == 0) {
                                   _selectedDuration = 60;
                                 }
+                                // Seçilen süreye göre fiyatı güncelle
+                                _selectedDurationPrice = _availableDurations.firstWhere(
+                                  (dp) => dp.duration == _selectedDuration,
+                                  orElse: () => _availableDurations.first,
+                                );
                               });
                             },
                           ),
@@ -1062,8 +840,8 @@ class _NewCustomerFormState extends State<NewCustomerForm>
                           ),
                           child: Text(
                             _selectedDuration > 0
-                                ? 'Toplam süre: ${_selectedDuration + _foundCustomer!.remainingTime.inMinutes} dk'
-                                : 'Sadece kalan süre kullanılacak: ${_foundCustomer!.remainingTime.inMinutes} dk',
+                                ? 'Toplam süre: ${((_selectedDuration * 60 + _foundCustomer!.remainingTime.inSeconds) ~/ 60)}:${((_selectedDuration * 60 + _foundCustomer!.remainingTime.inSeconds) % 60).toString().padLeft(2, '0')}'
+                                : 'Sadece kalan süre kullanılacak: ${_foundCustomer!.remainingTime.inMinutes}:${(_foundCustomer!.remainingTime.inSeconds % 60).toString().padLeft(2, '0')}',
                             style: TextStyle(
                               fontSize: 12,
                               fontWeight: FontWeight.bold,
@@ -1199,168 +977,197 @@ class _NewCustomerFormState extends State<NewCustomerForm>
 
             const SizedBox(height: 14),
 
-            // Süre Ayarlama ve Manuel Giriş
-            Row(
-              children: [
-                // Artırma/Azaltma Butonları
-                Expanded(
-                  flex: 3,
-                  child: Row(
-                    children: [
-                      _buildCircularButton(
-                        icon: Icons.remove_rounded,
-                        onPressed: () => _adjustDuration(-15),
-                        size: 40,
+            // İşletme Ayarlarından Gelen Süre Seçenekleri
+            if (_availableDurations.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text(
+                'Mevcut Süre Seçenekleri',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: Colors.grey.shade600,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: _availableDurations.map((durationPrice) {
+                  final isSelected = _selectedDurationPrice?.duration == durationPrice.duration;
+                  return GestureDetector(
+                    onTap: () {
+                      setState(() {
+                        _selectedDurationPrice = durationPrice;
+                        _selectedDuration = durationPrice.duration;
+                      });
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
                       ),
-                      Expanded(
-                        child: GestureDetector(
-                          onTap: _showDurationInputDialog,
-                          child: Container(
-                            height: 40,
-                            margin: const EdgeInsets.symmetric(horizontal: 10),
-                            decoration: BoxDecoration(
-                              color: Colors.grey.shade50,
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: Colors.grey.shade300),
-                            ),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Text(
-                                  '$_selectedDuration dk',
-                                  style: TextStyle(
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.w600,
-                                    color: AppTheme.primaryColor,
+                      decoration: BoxDecoration(
+                        color: isSelected ? AppTheme.primaryColor : Colors.white,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: isSelected
+                              ? AppTheme.primaryColor
+                              : Colors.grey.shade300,
+                          width: 1,
+                        ),
+                        boxShadow: isSelected
+                            ? [
+                                BoxShadow(
+                                  color: AppTheme.primaryColor.withOpacity(
+                                    0.15,
                                   ),
+                                  blurRadius: 3,
+                                  offset: const Offset(0, 1),
                                 ),
-                                const SizedBox(width: 4),
-                                Icon(
-                                  Icons.edit_outlined,
-                                  size: 14,
-                                  color: AppTheme.primaryColor.withOpacity(0.7),
-                                ),
-                              ],
+                              ]
+                            : null,
+                      ),
+                      child: Column(
+                        children: [
+                          Text(
+                            '${durationPrice.duration} dk',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: isSelected ? Colors.white : AppTheme.primaryColor,
                             ),
                           ),
-                        ),
+                          Text(
+                            '${durationPrice.price.toStringAsFixed(2)} ₺',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w500,
+                              color: isSelected ? Colors.white.withOpacity(0.8) : Colors.green.shade600,
+                            ),
+                          ),
+                        ],
                       ),
-                      _buildCircularButton(
-                        icon: Icons.add_rounded,
-                        onPressed: () => _adjustDuration(15),
-                        size: 40,
-                      ),
-                    ],
-                  ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ] else ...[
+              // Eğer işletme ayarları yüklenmediyse bilgi mesajı
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                decoration: BoxDecoration(
+                  color: Colors.orange.shade50,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.orange.shade200),
                 ),
-
-                const SizedBox(width: 10),
-
-                // Manuel Giriş Butonu
-                Expanded(
-                  flex: 2,
-                  child: SizedBox(
-                    height: 40,
-                    child: ElevatedButton.icon(
-                      onPressed: _showDurationInputDialog,
-                      icon: const Icon(Icons.edit_rounded, size: 14),
-                      label: const Text(
-                        'Manuel',
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.warning_amber_rounded,
+                      color: Colors.orange.shade700,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'Henüz süre seçenekleri belirlenmemiş. Lütfen admin ile iletişime geçin.',
                         style: TextStyle(
+                          color: Colors.orange.shade700,
                           fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppTheme.primaryColor.withOpacity(0.1),
-                        foregroundColor: AppTheme.primaryColor,
-                        elevation: 0,
-                        padding: EdgeInsets.zero,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
+                          fontWeight: FontWeight.w500,
                         ),
                       ),
                     ),
-                  ),
+                  ],
                 ),
-              ],
-            ),
-
-            const SizedBox(height: 12),
-
-            // Hızlı Süre Seçim Butonları
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: _durationOptions.map((duration) {
-                final isSelected = _selectedDuration == duration;
-                return GestureDetector(
-                  onTap: () {
-                    setState(() {
-                      _selectedDuration = duration;
-                    });
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 8,
-                    ),
-                    decoration: BoxDecoration(
-                      color: isSelected ? AppTheme.primaryColor : Colors.white,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(
-                        color: isSelected
-                            ? AppTheme.primaryColor
-                            : Colors.grey.shade300,
-                        width: 1,
-                      ),
-                      boxShadow: isSelected
-                          ? [
-                              BoxShadow(
-                                color: AppTheme.primaryColor.withOpacity(
-                                  0.15,
-                                ),
-                                blurRadius: 3,
-                                offset: const Offset(0, 1),
-                              ),
-                            ]
-                          : null,
-                    ),
-                    child: Text(
-                      '$duration dk',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color:
-                            isSelected ? Colors.white : AppTheme.primaryColor,
-                      ),
-                    ),
-                  ),
-                );
-              }).toList(),
-            ),
+              ),
+            ],
           ],
         ),
       ),
     );
   }
 
-  Widget _buildCircularButton({
-    required IconData icon,
-    required VoidCallback onPressed,
-    double size = 40,
-  }) {
-    return GestureDetector(
-      onTap: onPressed,
-      child: Container(
-        width: size,
-        height: size,
-        decoration: BoxDecoration(
-          color: Colors.white,
-          shape: BoxShape.circle,
-          border: Border.all(color: Colors.grey.shade300),
+
+
+  Widget _buildPaymentInfoCard() {
+    return Card(
+      margin: EdgeInsets.zero,
+      elevation: 0,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      color: Colors.green.shade50,
+      surfaceTintColor: Colors.green.shade50,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.green.shade100,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(
+                Icons.payment_rounded,
+                color: Colors.green.shade700,
+                size: 24,
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Ödenecek Tutar',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.green.shade700,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    _isUsingRemainingTime && _selectedDuration == 0 
+                        ? '0.00 ₺' 
+                        : '${_selectedDurationPrice?.price.toStringAsFixed(2) ?? '0.00'} ₺',
+                    style: TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.green.shade800,
+                    ),
+                  ),
+                  Text(
+                    _isUsingRemainingTime && _selectedDuration == 0 
+                        ? 'Kalan süre kullanılacak' 
+                        : '${_selectedDurationPrice?.duration ?? 0} dakika için',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.green.shade600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.green.shade100,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: Colors.green.shade300),
+              ),
+              child: Text(
+                'Ödeme',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.green.shade700,
+                ),
+              ),
+            ),
+          ],
         ),
-        child: Icon(icon, size: 20, color: AppTheme.primaryColor),
       ),
     );
   }

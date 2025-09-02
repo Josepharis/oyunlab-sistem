@@ -33,7 +33,7 @@ dependencies:
   flutter_localizations:
     sdk: flutter
   cupertino_icons: ^1.0.2
-  provider: ^6.1.1
+  provider: ^6.1.5+1
   shared_preferences: ^2.2.2
   intl: ^0.20.2
   image_picker: ^1.0.7
@@ -42,6 +42,7 @@ dependencies:
   cloud_firestore: ^5.4.4
   firebase_auth: ^5.3.1
   get_it: ^8.0.3
+  fl_chart: ^0.69.0
 
 dev_dependencies:
   flutter_test:

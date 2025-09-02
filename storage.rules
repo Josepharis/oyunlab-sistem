@@ -1,0 +1,23 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Resim dosyaları için kurallar
+    match /images/{allPaths=**} {
+      // Herkes okuyabilir
+      allow read: if true;
+      
+      // Sadece admin kullanıcılar yazabilir
+      allow write: if request.auth != null && 
+        (request.auth.token.email == 'yusuffrkn73@gmail.com' || 
+         firestore.get(/databases/(default)/documents/admin_users/$(request.auth.uid)).data.role in ['admin', 'manager']);
+    }
+    
+    // Diğer dosyalar için varsayılan kurallar
+    match /{allPaths=**} {
+      // Sadece admin kullanıcılar erişebilir
+      allow read, write: if request.auth != null && 
+        (request.auth.token.email == 'yusuffrkn73@gmail.com' || 
+         firestore.get(/databases/(default)/documents/admin_users/$(request.auth.uid)).data.role == 'admin');
+    }
+  }
+}

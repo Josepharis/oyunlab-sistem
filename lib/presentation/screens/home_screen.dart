@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/constants/app_constants.dart';
 import '../../data/models/customer_model.dart';
 import '../../data/models/table_order_model.dart';
@@ -9,12 +10,17 @@ import '../widgets/countdown_card.dart';
 import '../widgets/new_customer_form.dart';
 import '../../core/theme/app_theme.dart';
 import 'package:intl/intl.dart';
-import 'package:uuid/uuid.dart';
+
 
 class HomeScreen extends StatefulWidget {
   final CustomerRepository customerRepository;
+  final VoidCallback? onDataCleared; // Callback ekle
 
-  const HomeScreen({super.key, required this.customerRepository});
+  const HomeScreen({
+    super.key, 
+    required this.customerRepository,
+    this.onDataCleared,
+  });
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -23,7 +29,7 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen>
     with SingleTickerProviderStateMixin {
   late Stream<List<Customer>> _customersStream;
-  final GlobalKey<AnimatedListState> _listKey = GlobalKey<AnimatedListState>();
+
   TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
   final TableOrderRepository _tableOrderRepository = TableOrderRepository();
@@ -32,6 +38,18 @@ class _HomeScreenState extends State<HomeScreen>
   void initState() {
     super.initState();
     _customersStream = widget.customerRepository.customersStream;
+    
+    // Süre biten müşterileri otomatik tamamla
+    _autoCompleteExpiredCustomers();
+  }
+
+  /// Süre biten müşterileri otomatik tamamla
+  Future<void> _autoCompleteExpiredCustomers() async {
+    try {
+      await widget.customerRepository.autoCompleteExpiredCustomers();
+    } catch (e) {
+      print('HOME_SCREEN: Otomatik tamamlama hatası: $e');
+    }
   }
 
   @override
@@ -47,8 +65,34 @@ class _HomeScreenState extends State<HomeScreen>
         builder:
             (context) => Scaffold(
               appBar: AppBar(
-                title: Text(AppConstants.addNewCustomer),
+                title: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: AppTheme.primaryColor,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(
+                        Icons.sports_kabaddi_rounded,
+                        color: Colors.white,
+                        size: 20,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    const Text(
+                      'OyunLab',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ],
+                ),
                 elevation: 0,
+                backgroundColor: AppTheme.primaryColor,
+                foregroundColor: Colors.white,
               ),
               body: NewCustomerForm(
                 onSave: (customer) async {
@@ -65,7 +109,16 @@ class _HomeScreenState extends State<HomeScreen>
 
   // Masa ekleme dialog'u
   Future<void> _showAddTableDialog() async {
-    final customers = widget.customerRepository.customers;
+    // Firebase'den güncel müşteri listesini al
+    List<Customer> customers = [];
+    try {
+      customers = await widget.customerRepository.getActiveCustomers();
+      print('HOME_SCREEN: Masa ekleme dialog\'unda ${customers.length} aktif müşteri bulundu');
+    } catch (e) {
+      print('HOME_SCREEN: Aktif müşteriler alınamadı: $e');
+      // Hata durumunda repository'deki listeyi kullan
+      customers = widget.customerRepository.customers;
+    }
     
     // Firebase'den mevcut masaları al
     List<TableOrder> existingTables = [];
@@ -89,6 +142,12 @@ class _HomeScreenState extends State<HomeScreen>
       
       return !hasTable; // Masası olmayan çocukları döndür
     }).toList();
+
+    // Debug: Bilet numaralarını log'la
+    print('HOME_SCREEN: Masa ekleme dialog\'unda bulunan müşteriler:');
+    for (final customer in customersWithoutTable) {
+      print('HOME_SCREEN: ${customer.childName} - Bilet: ${customer.ticketNumber}');
+    }
 
     if (!mounted) return;
 
@@ -287,8 +346,6 @@ class _HomeScreenState extends State<HomeScreen>
   // Manuel masa ekleme dialog'u
   void _showManualTableDialog() {
     final TextEditingController nameController = TextEditingController();
-    final TextEditingController childCountController = TextEditingController();
-    childCountController.text = '1';
 
     showDialog(
       context: context,
@@ -313,16 +370,6 @@ class _HomeScreenState extends State<HomeScreen>
                 ),
                 autofocus: true,
               ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: childCountController,
-                decoration: const InputDecoration(
-                  labelText: 'Çocuk Sayısı',
-                  prefixIcon: Icon(Icons.people),
-                  hintText: 'Kaç çocuk için masa açılacak?',
-                ),
-                keyboardType: TextInputType.number,
-              ),
             ],
           ),
           actions: [
@@ -333,8 +380,7 @@ class _HomeScreenState extends State<HomeScreen>
             ElevatedButton(
               onPressed: () async {
                 if (nameController.text.trim().isNotEmpty) {
-                  final childCount = int.tryParse(childCountController.text) ?? 1;
-                  await _addManualTable(nameController.text.trim(), childCount);
+                  await _addManualTable(nameController.text.trim());
                   if (mounted) {
                     Navigator.pop(context);
                   }
@@ -352,7 +398,7 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   // Manuel masa ekleme
-  Future<void> _addManualTable(String customerName, int childCount) async {
+  Future<void> _addManualTable(String customerName) async {
     try {
       // Sonraki manuel masa numarasını al
       final nextTableNumber = await _getNextManualTableNumber();
@@ -362,7 +408,7 @@ class _HomeScreenState extends State<HomeScreen>
         tableNumber: nextTableNumber,
         customerName: customerName,
         ticketNumber: 0, // Manuel masalar için 0
-        childCount: childCount,
+        childCount: 1, // Varsayılan olarak 1 çocuk
         isManual: true, // Manuel olarak işaretle
       );
 
@@ -372,7 +418,7 @@ class _HomeScreenState extends State<HomeScreen>
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('$customerName için $childCount çocuklu manuel masa #$nextTableNumber açıldı'),
+            content: Text('$customerName için manuel masa #$nextTableNumber açıldı'),
             backgroundColor: Colors.green.shade600,
             behavior: SnackBarBehavior.floating,
           ),
@@ -394,6 +440,9 @@ class _HomeScreenState extends State<HomeScreen>
   // Sonraki manuel masa numarasını al
   Future<int> _getNextManualTableNumber() async {
     try {
+      // Her gün masa numaralarını sıfırla
+      await _checkAndResetTableNumbers();
+      
       // Firebase'den mevcut masaları al
       final existingTables = await _tableOrderRepository.getAllTables();
       
@@ -401,7 +450,7 @@ class _HomeScreenState extends State<HomeScreen>
       final manualTables = existingTables.where((table) => table.isManual).toList();
       
       if (manualTables.isEmpty) {
-        return 1000; // İlk manuel masa
+        return 1; // İlk manuel masa 1'den başlasın
       }
       
       // En yüksek manuel masa numarasını bul
@@ -412,13 +461,40 @@ class _HomeScreenState extends State<HomeScreen>
       return maxTableNumber + 1;
     } catch (e) {
       // Hata durumunda varsayılan numara döndür
-      return 1000;
+      return 1;
+    }
+  }
+
+  // Her gün masa numaralarını sıfırla
+  Future<void> _checkAndResetTableNumbers() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final lastResetDate = prefs.getString('last_table_number_reset');
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      
+      // Eğer bugün sıfırlanmamışsa sıfırla
+      if (lastResetDate == null || lastResetDate != today.toIso8601String()) {
+        // Bugünün tarihini kaydet
+        await prefs.setString('last_table_number_reset', today.toIso8601String());
+        
+        // Tüm manuel masaları sil (sadece bugün için)
+        final existingTables = await _tableOrderRepository.getAllTables();
+        final manualTables = existingTables.where((table) => table.isManual).toList();
+        
+        for (final table in manualTables) {
+          await _tableOrderRepository.deleteTable(table.tableNumber);
+        }
+        
+        print('Masa numaraları bugün için sıfırlandı');
+      }
+    } catch (e) {
+      print('Masa numarası sıfırlama hatası: $e');
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
 
     return Scaffold(
       backgroundColor: AppTheme.backgroundColor,
@@ -440,7 +516,7 @@ class _HomeScreenState extends State<HomeScreen>
                         children: [
                           Text(
                             'OyunLab',
-                            style: theme.textTheme.titleLarge?.copyWith(
+                            style: Theme.of(context).textTheme.titleLarge?.copyWith(
                               fontWeight: FontWeight.bold,
                               color: AppTheme.primaryColor,
                             ),
@@ -448,48 +524,143 @@ class _HomeScreenState extends State<HomeScreen>
                           const SizedBox(height: 4),
                           Text(
                             'Oyun Alanı Takip',
-                            style: theme.textTheme.bodyMedium?.copyWith(
+                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                               color: AppTheme.secondaryTextColor,
                             ),
                           ),
                         ],
                       ),
-                      Row(
+                                                                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
                         children: [
-                                                ElevatedButton.icon(
-                        onPressed: () async => await _showAddTableDialog(),
-                        icon: const Icon(Icons.table_restaurant_rounded, size: 20),
-                        label: const Text('Masa Ekle'),
-                        style: ElevatedButton.styleFrom(
-                          elevation: 0,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 12,
-                          ),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          backgroundColor: AppTheme.accentColor,
-                          foregroundColor: Colors.white,
-                        ),
-                      ),
-                          const SizedBox(width: 8),
-                          ElevatedButton.icon(
-                            onPressed: _showNewCustomerForm,
-                            icon: const Icon(Icons.add_rounded, size: 20),
-                            label: const Text('Yeni Kayıt'),
-                            style: ElevatedButton.styleFrom(
-                              elevation: 0,
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 12,
+                          // İlk satır: Masa Ekle ve Yeni Kayıt
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              ElevatedButton.icon(
+                                onPressed: () async => await _showAddTableDialog(),
+                                icon: const Icon(Icons.table_restaurant_rounded, size: 20),
+                                label: const Text('Masa Ekle'),
+                                style: ElevatedButton.styleFrom(
+                                  elevation: 0,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 16,
+                                    vertical: 12,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  backgroundColor: AppTheme.accentColor,
+                                  foregroundColor: Colors.white,
+                                ),
                               ),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
+                              const SizedBox(width: 8),
+                              ElevatedButton.icon(
+                                onPressed: _showNewCustomerForm,
+                                icon: const Icon(Icons.add_rounded, size: 20),
+                                label: const Text('Yeni Kayıt'),
+                                style: ElevatedButton.styleFrom(
+                                  elevation: 0,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 16,
+                                    vertical: 12,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  backgroundColor: AppTheme.primaryColor,
+                                  foregroundColor: Colors.white,
+                                ),
                               ),
-                              backgroundColor: AppTheme.primaryColor,
-                              foregroundColor: Colors.white,
-                            ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          // İkinci satır: Bilet Sıfırla ve Tümünü Sil
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              ElevatedButton.icon(
+                                onPressed: () async {
+                                  await widget.customerRepository.resetTicketNumbers();
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text('Bilet numaraları 100\'den başlatıldı'),
+                                      backgroundColor: Colors.green.shade600,
+                                    ),
+                                  );
+                                },
+                                icon: const Icon(Icons.refresh, size: 20),
+                                label: const Text('Bilet Sıfırla'),
+                                style: ElevatedButton.styleFrom(
+                                  elevation: 0,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 16,
+                                    vertical: 12,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  backgroundColor: Colors.orange.shade600,
+                                  foregroundColor: Colors.white,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              ElevatedButton.icon(
+                                onPressed: () async {
+                                  // Onay dialog'u göster
+                                  final confirmed = await showDialog<bool>(
+                                    context: context,
+                                    builder: (context) => AlertDialog(
+                                      title: Text('Dikkat!'),
+                                      content: Text('Tüm müşteri verileri silinecek. Bu işlem geri alınamaz. Devam etmek istiyor musunuz?'),
+                                      actions: [
+                                        TextButton(
+                                          onPressed: () => Navigator.pop(context, false),
+                                          child: Text('İptal'),
+                                        ),
+                                        ElevatedButton(
+                                          onPressed: () => Navigator.pop(context, true),
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor: Colors.red.shade600,
+                                          ),
+                                          child: Text('Tümünü Sil'),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                  
+                                  if (confirmed == true) {
+                                    await widget.customerRepository.clearAllCustomers();
+                                    
+                                    // Callback'i çağır
+                                    if (widget.onDataCleared != null) {
+                                      widget.onDataCleared!();
+                                    }
+                                    
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text('Tüm müşteri verileri silindi'),
+                                        backgroundColor: Colors.red.shade600,
+                                      ),
+                                    );
+                                  }
+                                },
+                                icon: const Icon(Icons.delete_forever, size: 20),
+                                label: const Text('Tümünü Sil'),
+                                style: ElevatedButton.styleFrom(
+                                  elevation: 0,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 16,
+                                    vertical: 12,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  backgroundColor: Colors.red.shade600,
+                                  foregroundColor: Colors.white,
+                                ),
+                              ),
+                            ],
                           ),
                         ],
                       ),
@@ -541,145 +712,141 @@ class _HomeScreenState extends State<HomeScreen>
               ),
             ),
 
-            // Subtitle
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 5, 20, 8),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'Aktif Çocuklar',
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-
-                  // Active count badge
-                  StreamBuilder<List<Customer>>(
-                    stream: _customersStream,
-                    builder: (context, snapshot) {
-                      int activeCount = 0;
-
-                      if (snapshot.hasData) {
-                        activeCount =
-                            snapshot.data!
-                                .where(
-                                  (customer) =>
-                                      customer.remainingTime.inSeconds > 0,
-                                )
-                                .length;
-                      }
-
-                      return Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: AppTheme.primaryColor.withOpacity(0.15),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Row(
-                          children: [
-                            Icon(
-                              Icons.people_alt_rounded,
-                              size: 16,
-                              color: AppTheme.primaryColor,
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              activeCount.toString(),
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                color: AppTheme.primaryColor,
-                                fontSize: 16,
-                              ),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
-                  ),
-                ],
-              ),
-            ),
-
-            // List of active customers
+            // Tek StreamBuilder ile hem header hem de liste
             Expanded(
               child: StreamBuilder<List<Customer>>(
                 stream: _customersStream,
                 builder: (context, snapshot) {
-                  // Hata durumunda hata mesajı göster
-                  if (snapshot.hasError) {
-                    return Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            Icons.error_outline_rounded,
-                            size: 48,
-                            color: AppTheme.secondaryColor,
-                          ),
-                          const SizedBox(height: 16),
-                          Text(
-                            'Hata: ${snapshot.error}',
-                            style: TextStyle(
-                              fontSize: 16,
-                              color: AppTheme.secondaryTextColor,
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  }
-
                   // Veri henüz yüklenmediyse, boş bir liste göster
-                  // Repository'de zaten örnek veriler var, bu nedenle gerçek veri yoksa bile
-                  // boş bir loading göstermeyeceğiz
                   final List<Customer> allCustomers = snapshot.data ?? [];
 
-                  // Aktif müşteriler (kalan süresi > 0)
-                  final activeCustomers =
-                      allCustomers
-                          .where(
-                            (customer) => customer.remainingTime.inSeconds > 0,
-                          )
-                          .toList();
+                  // Aktif müşteriler (isActive: true, kalan süresi > 0 ve tamamlanmamış)
+                  final activeCustomers = allCustomers
+                      .where((customer) => 
+                          customer.isActive && 
+                          customer.activeRemainingTime.inSeconds > 0 &&
+                          !customer.isCompleted)
+                      .toList();
 
-                  if (activeCustomers.isEmpty) {
-                    return _buildEmptyState();
+                  // Aktif çocuk sayısını childCount'a göre hesapla
+                  int activeCount = 0;
+                  for (var customer in activeCustomers) {
+                    activeCount += customer.childCount;
                   }
 
-                  // Filtrelemeyi uygula
-                  final filteredCustomers = _filterCustomers(
-                    activeCustomers,
-                    _searchQuery,
-                  );
-
-                  if (filteredCustomers.isEmpty && _searchQuery.isNotEmpty) {
-                    return Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.search_off,
-                            size: 50,
-                            color: Colors.grey.shade400,
-                          ),
-                          const SizedBox(height: 16),
-                          Text(
-                            'Aramanızla eşleşen müşteri bulunamadı',
-                            style: TextStyle(
-                              fontSize: 16,
-                              color: Colors.grey.shade600,
+                  return Column(
+                    children: [
+                      // Header with count
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(20, 5, 20, 8),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              'Aktif Çocuklar',
+                              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
-                          ),
-                        ],
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: AppTheme.primaryColor.withOpacity(0.15),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    Icons.people_alt_rounded,
+                                    size: 16,
+                                    color: AppTheme.primaryColor,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    activeCount.toString(),
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      color: AppTheme.primaryColor,
+                                      fontSize: 16,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                    );
-                  }
 
-                  return _buildCustomersList(filteredCustomers);
+                      // Content area
+                      Expanded(
+                        child: Builder(
+                          builder: (context) {
+                            // Hata durumunda hata mesajı göster
+                            if (snapshot.hasError) {
+                              return Center(
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      Icons.error_outline_rounded,
+                                      size: 48,
+                                      color: AppTheme.secondaryColor,
+                                    ),
+                                    const SizedBox(height: 16),
+                                    Text(
+                                      'Hata: ${snapshot.error}',
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        color: AppTheme.secondaryTextColor,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            }
+
+                            if (activeCustomers.isEmpty) {
+                              return _buildEmptyState();
+                            }
+
+                            // Filtrelemeyi uygula
+                            final filteredCustomers = _filterCustomers(
+                              activeCustomers,
+                              _searchQuery,
+                            );
+
+                            if (filteredCustomers.isEmpty && _searchQuery.isNotEmpty) {
+                              return Center(
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.search_off,
+                                      size: 50,
+                                      color: Colors.grey.shade400,
+                                    ),
+                                    const SizedBox(height: 16),
+                                    Text(
+                                      'Aramanızla eşleşen müşteri bulunamadı',
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        color: Colors.grey.shade600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            }
+
+                            return _buildCustomersList(filteredCustomers);
+                          },
+                        ),
+                      ),
+                    ],
+                  );
                 },
               ),
             ),
@@ -751,28 +918,30 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   Widget _buildCustomersList(List<Customer> customers) {
-    // Biletlere göre gruplama yap, her bilet için tek kart göster
-    final Map<int, List<Customer>> ticketGroups = {};
+    // SADECE ANA MÜŞTERİLERİ GÖSTER - kardeşleri gösterme
+    // Ana müşteri = bilet numarasına sahip ilk müşteri
+    final Map<int, Customer> uniqueTickets = {};
 
-    // Müşterileri bilet numarasına göre grupla
     for (var customer in customers) {
-      if (!ticketGroups.containsKey(customer.ticketNumber)) {
-        ticketGroups[customer.ticketNumber] = [];
+      // Bu bilet numarası için zaten ana müşteri var mı?
+      if (!uniqueTickets.containsKey(customer.ticketNumber)) {
+        // İlk müşteriyi ana müşteri olarak kaydet
+        uniqueTickets[customer.ticketNumber] = customer;
       }
-      ticketGroups[customer.ticketNumber]!.add(customer);
     }
 
-    // Her bilet için ana kart oluştur
-    final List<Widget> cards = [];
-    ticketGroups.forEach((ticketNumber, ticketCustomers) {
-      // Gruptaki ilk müşteriyi temel olarak kullan
-      final primaryCustomer = ticketCustomers.first;
-      final siblingCount = ticketCustomers.length;
+    // Tamamlanan müşterileri filtrele
+    final activeUniqueTickets = Map.fromEntries(
+        uniqueTickets.entries.where((entry) => !entry.value.isCompleted));
 
+    // Sadece ana müşteriler için kart oluştur
+    final List<Widget> cards = [];
+    activeUniqueTickets.forEach((ticketNumber, primaryCustomer) {
       cards.add(
         CountdownCard(
           key: ValueKey('ticket-$ticketNumber'),
           customer: primaryCustomer,
+          childCount: primaryCustomer.childCount, // Model'den al
           onTap: () => _showCustomerDetails(primaryCustomer),
         ),
       );
@@ -785,7 +954,6 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   void _showCustomerDetails(Customer customer) {
-    final theme = Theme.of(context);
 
     showModalBottomSheet(
       context: context,
@@ -1393,10 +1561,10 @@ class _HomeScreenState extends State<HomeScreen>
   void _showAddSiblingDialog(Customer customer) {
     int siblingCount = 1; // Eklenecek kardeş sayısı
 
-    // Mevcut kardeşleri bul
+    // Mevcut kardeşleri bul (sadece aktif olanlar)
     final currentSiblings =
         widget.customerRepository.customers
-            .where((c) => c.ticketNumber == customer.ticketNumber)
+            .where((c) => c.ticketNumber == customer.ticketNumber && c.remainingTime.inSeconds > 0)
             .toList();
 
     // DEBUG: Hangi süreler alınıyor kontrol et
@@ -1422,6 +1590,11 @@ class _HomeScreenState extends State<HomeScreen>
           builder: (context, setState) {
             // Yeni kardeş sayısı dahil toplam çocuk sayısı
             final totalChildren = currentSiblings.length + siblingCount;
+            
+            // Debug: Hesaplama bilgilerini log'la
+            print('DEBUG: Mevcut çocuk sayısı: ${currentSiblings.length}');
+            print('DEBUG: Eklenecek çocuk sayısı: $siblingCount');
+            print('DEBUG: Toplam çocuk sayısı: $totalChildren');
 
             // Kişi başı düşecek süre (saniye)
             final perChildSeconds = totalRemainingSeconds ~/ totalChildren;
@@ -1506,7 +1679,7 @@ class _HomeScreenState extends State<HomeScreen>
 
                   // Süre bilgisi
                   Container(
-                    padding: EdgeInsets.all(12),
+                    padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
                       color: AppTheme.primaryColor.withOpacity(0.05),
                       borderRadius: BorderRadius.circular(12),
@@ -1525,62 +1698,79 @@ class _HomeScreenState extends State<HomeScreen>
                             color: AppTheme.primaryColor,
                           ),
                         ),
-                        SizedBox(height: 8),
+                        const SizedBox(height: 8),
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Text(
-                              'Mevcut çocuk sayısı:',
+                            const Text(
+                              'Mevcut aktif çocuk sayısı:',
                               style: TextStyle(fontSize: 13),
                             ),
                             Text(
                               '${currentSiblings.length}',
-                              style: TextStyle(
+                              style: const TextStyle(
                                 fontSize: 13,
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
                           ],
                         ),
-                        SizedBox(height: 4),
+                        const SizedBox(height: 4),
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
+                            const Text(
+                              'Eklenecek çocuk sayısı:',
+                              style: TextStyle(fontSize: 14),
+                            ),
                             Text(
-                              'Toplam çocuk sayısı:',
-                              style: TextStyle(fontSize: 13),
+                              '$siblingCount',
+                              style: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text(
+                              'Son durum çocuk sayısı:',
+                              style: TextStyle(fontSize: 14),
                             ),
                             Text(
                               '$totalChildren',
-                              style: TextStyle(
+                              style: const TextStyle(
                                 fontSize: 13,
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
                           ],
                         ),
-                        SizedBox(height: 4),
+                        const SizedBox(height: 4),
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Text(
+                            const Text(
                               'Toplam kalan süre:',
                               style: TextStyle(fontSize: 13),
                             ),
                             Text(
                               '${totalRemainingSeconds ~/ 60} dk ${totalRemainingSeconds % 60} sn',
-                              style: TextStyle(
+                              style: const TextStyle(
                                 fontSize: 13,
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
                           ],
                         ),
-                        Divider(height: 16),
+                        const Divider(height: 16),
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Text(
+                            const Text(
                               'Kişi başı düşecek süre:',
                               style: TextStyle(
                                 fontSize: 14,
@@ -1590,7 +1780,7 @@ class _HomeScreenState extends State<HomeScreen>
                             ),
                             Text(
                               '$perChildMinutes dk $perChildRemainingSeconds sn',
-                              style: TextStyle(
+                              style: const TextStyle(
                                 fontSize: 14,
                                 fontWeight: FontWeight.bold,
                                 color: AppTheme.primaryColor,
@@ -1613,8 +1803,12 @@ class _HomeScreenState extends State<HomeScreen>
                     // Son kez yeni çocuk sayısına göre süreyi hesapla
                     final totalChildren = currentSiblings.length + siblingCount;
                     final perChildSeconds = totalRemainingSeconds ~/ totalChildren;
+                    
+                    // Debug: Hesaplama bilgilerini log'la
+                    print('DEBUG: Son hesaplama - Mevcut: ${currentSiblings.length}, Eklenecek: $siblingCount, Toplam: $totalChildren');
+                    print('DEBUG: Toplam süre: $totalRemainingSeconds saniye, Kişi başı: $perChildSeconds saniye');
 
-                    // Mevcut kardeşlerin süresini güncelle
+                    // Mevcut kardeşlerin süresini güncelle (ana müşteri dahil)
                     for (var sibling in currentSiblings) {
                       // Geçen süre (giriş zamanından şu ana kadar)
                       final elapsedTime = DateTime.now().difference(
@@ -1626,42 +1820,16 @@ class _HomeScreenState extends State<HomeScreen>
                           elapsedTime.inSeconds + perChildSeconds;
                       final newDurationMinutes = totalDurationSeconds ~/ 60;
 
-                      final updatedCustomer = Customer(
-                        id: sibling.id,
-                        childName: sibling.childName,
-                        parentName: sibling.parentName,
-                        phoneNumber: sibling.phoneNumber,
-                        entryTime: sibling.entryTime,
+                      // TÜM KARDEŞLERİN childCount'ını güncelle
+                      final updatedCustomer = sibling.copyWith(
                         durationMinutes: newDurationMinutes,
-                        ticketNumber: sibling.ticketNumber,
-                        isPaused: sibling.isPaused,
-                        pauseTime: sibling.pauseTime,
-                        pausedDuration: sibling.pausedDuration,
+                        childCount: currentSiblings.length + siblingCount, // Doğru toplam çocuk sayısı
                       );
+                      
+                      // Debug: Güncellenen müşteri bilgilerini log'la
+                      print('DEBUG: ${sibling.childName} güncellendi - Yeni süre: $newDurationMinutes dk, Yeni childCount: $totalChildren');
 
                       widget.customerRepository.updateCustomer(updatedCustomer);
-                    }
-
-                    // Yeni kardeşleri ekle ama isim verme
-                    for (int i = 0; i < siblingCount; i++) {
-                      // Kardeşlere ana müşteri ile aynı ismi ver
-                      final durationMinutes = perChildSeconds ~/ 60;
-
-                      final siblingCustomer = Customer(
-                        id: const Uuid().v4(),
-                        childName:
-                            customer.childName, // Ana müşteri ile aynı isim
-                        parentName: customer.parentName,
-                        phoneNumber: customer.phoneNumber,
-                        entryTime: DateTime.now(),
-                        durationMinutes: durationMinutes,
-                        ticketNumber: customer.ticketNumber,
-                        isPaused: false,
-                        pauseTime: null,
-                        pausedDuration: null,
-                      );
-
-                      widget.customerRepository.addCustomer(siblingCustomer);
                     }
 
                     Navigator.pop(context);
@@ -1670,7 +1838,7 @@ class _HomeScreenState extends State<HomeScreen>
                     final childText = siblingCount == 1 ? 'kardeş' : 'kardeş';
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
-                        content: Text('$siblingCount $childText eklendi'),
+                        content: Text('$siblingCount $childText eklendi. Toplam çocuk sayısı: $totalChildren'),
                         backgroundColor: Colors.green.shade600,
                         behavior: SnackBarBehavior.floating,
                       ),
@@ -1691,17 +1859,12 @@ class _HomeScreenState extends State<HomeScreen>
 
   // Kardeş Çıkarma Dialog
   void _showRemoveSiblingDialog(Customer customer) {
-    // Aynı bilet numarasına sahip kardeşleri bul
-    final siblings =
-        widget.customerRepository.customers
-            .where(
-              (c) =>
-                  c.ticketNumber == customer.ticketNumber &&
-                  c.id != customer.id,
-            )
-            .toList();
+    // Aynı bilet numarasına sahip tüm kardeşleri bul (seçilen çocuk dahil)
+    final siblings = widget.customerRepository.customers
+        .where((c) => c.ticketNumber == customer.ticketNumber && c.remainingTime.inSeconds > 0)
+        .toList();
 
-    if (siblings.isEmpty) {
+    if (siblings.length <= 1) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Bu çocuğun kayıtlı kardeşi bulunmuyor'),
@@ -1717,12 +1880,11 @@ class _HomeScreenState extends State<HomeScreen>
     print('Müşteri: ${customer.childName}');
     print('Bilet No: ${customer.ticketNumber}');
     
-    // Tüm kardeşleri tanımla
-    final allSiblings = [...siblings, customer];
+
 
     int totalRemainingSeconds = 0;
     Map<String, int> siblingRemainingSeconds = {};
-    for (final sibling in allSiblings) {
+    for (final sibling in siblings) {
       final siblingSeconds = sibling.remainingTime.inSeconds;
       totalRemainingSeconds += siblingSeconds;
       siblingRemainingSeconds[sibling.id] = siblingSeconds;
@@ -1748,9 +1910,75 @@ class _HomeScreenState extends State<HomeScreen>
                       color: AppTheme.secondaryTextColor,
                     ),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 16),
+                  // Kardeş listesi
                   Container(
-                    padding: EdgeInsets.all(12),
+                    constraints: BoxConstraints(
+                      maxHeight: MediaQuery.of(context).size.height * 0.4,
+                    ),
+                    width: double.infinity,
+                    child: SingleChildScrollView(
+                      child: Column(
+                        children: siblings.map((sibling) {
+                          final remainingMinutes = sibling.remainingTime.inMinutes;
+                          return ListTile(
+                            title: Text(sibling.childName),
+                            subtitle: Text('Kalan süre: $remainingMinutes dakika'),
+                            trailing: ElevatedButton(
+                              onPressed: () async {
+                                // Kardeşi çıkar
+                                final updatedSiblings = List<Customer>.from(siblings)..remove(sibling);
+                                
+                                // Kalan süreyi diğer kardeşler arasında paylaştır
+                                if (updatedSiblings.isNotEmpty) {
+                                  final totalRemainingSeconds = sibling.remainingTime.inSeconds;
+                                  final perChildSeconds = totalRemainingSeconds ~/ updatedSiblings.length;
+                                  
+                                  for (var remainingSibling in updatedSiblings) {
+                                    final elapsedTime = DateTime.now().difference(remainingSibling.entryTime);
+                                    final totalDurationSeconds = elapsedTime.inSeconds + perChildSeconds;
+                                    final newDurationMinutes = totalDurationSeconds ~/ 60;
+                                    
+                                    final updatedCustomer = remainingSibling.copyWith(
+                                      durationMinutes: newDurationMinutes,
+                                      childCount: updatedSiblings.length,
+                                    );
+                                    
+                                    await widget.customerRepository.updateCustomer(updatedCustomer);
+                                  }
+                                }
+                                
+                                // Çıkarılan kardeşin süresini sıfırla
+                                final removedSibling = sibling.copyWith(
+                                  durationMinutes: 0,
+                                  childCount: 1,
+                                );
+                                await widget.customerRepository.updateCustomer(removedSibling);
+                                
+                                if (context.mounted) {
+                                  Navigator.pop(context);
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text('${sibling.childName} çıkarıldı ve süresi diğer kardeşlere dağıtıldı'),
+                                      backgroundColor: Colors.orange.shade600,
+                                      behavior: SnackBarBehavior.floating,
+                                    ),
+                                  );
+                                }
+                              },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.red.shade600,
+                                foregroundColor: Colors.white,
+                              ),
+                              child: const Text('Çıkar'),
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
                       color: AppTheme.primaryColor.withOpacity(0.05),
                       borderRadius: BorderRadius.circular(12),
@@ -1765,30 +1993,30 @@ class _HomeScreenState extends State<HomeScreen>
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Text(
+                            const Text(
                               'Toplam çocuk sayısı:',
                               style: TextStyle(fontSize: 13),
                             ),
                             Text(
-                              '${allSiblings.length}',
-                              style: TextStyle(
+                              '${siblings.length}',
+                              style: const TextStyle(
                                 fontSize: 13,
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
                           ],
                         ),
-                        SizedBox(height: 4),
+                        const SizedBox(height: 4),
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Text(
+                            const Text(
                               'Toplam kalan süre:',
                               style: TextStyle(fontSize: 13),
                             ),
                             Text(
                               '${totalRemainingSeconds ~/ 60} dk ${totalRemainingSeconds % 60} sn',
-                              style: TextStyle(
+                              style: const TextStyle(
                                 fontSize: 13,
                                 fontWeight: FontWeight.bold,
                               ),
@@ -1844,20 +2072,20 @@ class _HomeScreenState extends State<HomeScreen>
                                         backgroundColor: Colors.red.shade100,
                                         foregroundColor: Colors.red.shade700,
                                         elevation: 0,
-                                        padding: EdgeInsets.symmetric(
+                                        padding: const EdgeInsets.symmetric(
                                           horizontal: 12,
                                           vertical: 6,
                                         ),
                                       ),
                                       onPressed: () {
-                                        _removeSibling(sibling, allSiblings);
+                                        _removeSibling(sibling, siblings);
                                         Navigator.pop(context);
                                       },
                                     ),
                                   ),
                                   if (siblings.indexOf(sibling) <
                                       siblings.length - 1)
-                                    Divider(height: 1),
+                                    const Divider(height: 1),
                                 ],
                               );
                             }).toList(),
@@ -1907,6 +2135,11 @@ class _HomeScreenState extends State<HomeScreen>
 
     // ÇIKARMA SONRASI KİŞİ BAŞI SÜREYİ HESAPLA = TOPLAM KALAN SÜRE / KALAN ÇOCUK SAYISI
     final perChildSeconds = totalRemainingSeconds ~/ remainingSiblings.length;
+    
+    // Debug: Hesaplama bilgilerini log'la
+    print('DEBUG: Kardeş çıkarma - Toplam süre: $totalRemainingSeconds saniye');
+    print('DEBUG: Kardeş çıkarma - Kalan çocuk sayısı: ${remainingSiblings.length}');
+    print('DEBUG: Kardeş çıkarma - Kişi başı süre: $perChildSeconds saniye');
 
 
 
@@ -1919,7 +2152,7 @@ class _HomeScreenState extends State<HomeScreen>
       final totalDurationSeconds = elapsedTime.inSeconds + perChildSeconds;
       final newDurationMinutes = totalDurationSeconds ~/ 60;
 
-      // Duraklatma bilgilerini koru
+      // Duraklatma bilgilerini koru ve childCount'ı güncelle
       final updatedCustomer = Customer(
         id: sibling.id,
         childName: sibling.childName,
@@ -1928,10 +2161,14 @@ class _HomeScreenState extends State<HomeScreen>
         entryTime: sibling.entryTime,
         durationMinutes: newDurationMinutes,
         ticketNumber: sibling.ticketNumber,
+        childCount: remainingSiblings.length, // Kalan çocuk sayısını güncelle
         isPaused: sibling.isPaused,
         pauseTime: sibling.pauseTime,
         pausedDuration: sibling.pausedDuration,
       );
+      
+      // Debug: Güncellenen müşteri bilgilerini log'la
+      print('DEBUG: ${sibling.childName} güncellendi - Yeni süre: $newDurationMinutes dk, Yeni childCount: ${remainingSiblings.length}');
 
       widget.customerRepository.updateCustomer(updatedCustomer);
     }
@@ -1946,7 +2183,7 @@ class _HomeScreenState extends State<HomeScreen>
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          '${siblingToRemove.childName} çıkarıldı. Kalan çocukların süresi: $perChildMinutes dk $perChildRemainingSeconds sn',
+          '${siblingToRemove.childName} çıkarıldı. Kalan ${remainingSiblings.length} çocuğun süresi: $perChildMinutes dk $perChildRemainingSeconds sn',
         ),
         backgroundColor: Colors.green.shade600,
         behavior: SnackBarBehavior.floating,
@@ -2403,17 +2640,7 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  int _nextTicketNumber() {
-    // Repository'den son bilet numarasını alıp bir fazlasını dön
-    final lastTicketNumber = widget.customerRepository.customers
-        .map((customer) => customer.ticketNumber)
-        .fold<int>(
-          100,
-          (max, ticketNumber) => ticketNumber > max ? ticketNumber : max,
-        );
 
-    return lastTicketNumber + 1;
-  }
 
   // Müşteri filtreleme fonksiyonu
   List<Customer> _filterCustomers(List<Customer> customers, String query) {
@@ -2426,8 +2653,7 @@ class _HomeScreenState extends State<HomeScreen>
     return customers.where((customer) {
       return customer.childName.toLowerCase().contains(query) ||
           customer.parentName.toLowerCase().contains(query) ||
-          customer.phoneNumber.contains(query) ||
-          customer.ticketNumber.toString().contains(query);
+          customer.phoneNumber.contains(query);
     }).toList();
   }
 }

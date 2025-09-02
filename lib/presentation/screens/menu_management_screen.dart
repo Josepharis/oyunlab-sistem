@@ -55,6 +55,7 @@ class _MenuManagementScreenState extends State<MenuManagementScreen>
         // Test için birkaç örnek ürün ekle
         _menuItems.add(
           ProductItem(
+            id: '', // Test ürünü için boş ID
             name: "Test Ürünü 1",
             price: 15.99,
             category: ProductCategory.food,
@@ -63,6 +64,7 @@ class _MenuManagementScreenState extends State<MenuManagementScreen>
         );
         _menuItems.add(
           ProductItem(
+            id: '', // Test ürünü için boş ID
             name: "Test İçeceği",
             price: 8.50,
             category: ProductCategory.drink,
@@ -115,10 +117,10 @@ class _MenuManagementScreenState extends State<MenuManagementScreen>
     if (_searchQuery.isEmpty) {
       return _menuItems.where((item) => item.category == category).toList();
     } else {
+      // Tüm kategorilerde arama yap
       return _menuItems
           .where(
             (item) =>
-                item.category == category &&
                 (item.name.toLowerCase().contains(_searchQuery.toLowerCase()) ||
                     (item.description
                             ?.toLowerCase()
@@ -387,6 +389,9 @@ class _MenuManagementScreenState extends State<MenuManagementScreen>
     final descriptionController = TextEditingController(
       text: isEditing ? productToEdit.description ?? '' : '',
     );
+    final stockController = TextEditingController(
+      text: isEditing ? productToEdit.stock.toString() : '0',
+    );
 
     // Düzenleme modunda seçili kategoriyi ayarla
     var selectedCategory = initialCategory ??
@@ -410,6 +415,7 @@ class _MenuManagementScreenState extends State<MenuManagementScreen>
     // Form validasyonu için
     bool _isNameValid = true;
     bool _isPriceValid = true;
+    bool _isStockValid = true;
 
     showDialog(
       context: context,
@@ -955,6 +961,79 @@ class _MenuManagementScreenState extends State<MenuManagementScreen>
                                           ),
                                         ),
                                       ),
+
+                                    const SizedBox(height: 24),
+
+                                    // Ürün Stoku
+                                    const Text(
+                                      'Ürün Stoku',
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.bold,
+                                        color: Color(0xFF303030),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Container(
+                                      decoration: BoxDecoration(
+                                        color: Colors.grey.shade50,
+                                        borderRadius: BorderRadius.circular(16),
+                                        border: Border.all(
+                                          color: _isStockValid
+                                              ? Colors.grey.shade200
+                                              : Colors.red.shade300,
+                                          width: 1,
+                                        ),
+                                      ),
+                                      child: TextField(
+                                        controller: stockController,
+                                        keyboardType: const TextInputType.numberWithOptions(
+                                          decimal: false,
+                                        ),
+                                        onChanged: (value) {
+                                          final stock = int.tryParse(value);
+                                          setDialogState(() {
+                                            _isStockValid = stock != null && stock >= 0;
+                                          });
+                                        },
+                                        decoration: InputDecoration(
+                                          hintText: '0',
+                                          hintStyle: TextStyle(
+                                            color: Colors.grey.shade400,
+                                            fontSize: 15,
+                                          ),
+                                          prefixIcon: Icon(
+                                            Icons.inventory_2_rounded,
+                                            color: Colors.grey.shade500,
+                                          ),
+                                          suffixText: 'adet',
+                                          suffixStyle: TextStyle(
+                                            color: Colors.blue.shade700,
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 18,
+                                          ),
+                                          border: InputBorder.none,
+                                          contentPadding:
+                                              const EdgeInsets.all(16),
+                                        ),
+                                        style: const TextStyle(
+                                          fontSize: 16,
+                                          color: Color(0xFF303030),
+                                        ),
+                                      ),
+                                    ),
+                                    if (!_isStockValid)
+                                      Padding(
+                                        padding: const EdgeInsets.only(
+                                            top: 6, left: 12),
+                                        child: Text(
+                                          'Geçerli bir stok miktarı giriniz',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: Colors.red.shade500,
+                                          ),
+                                        ),
+                                      ),
                                   ],
                                 ),
                               ),
@@ -1016,6 +1095,15 @@ class _MenuManagementScreenState extends State<MenuManagementScreen>
                                         return;
                                       }
 
+                                      // Stok validasyonu
+                                      final stock = int.tryParse(stockController.text);
+                                      if (stock == null || stock < 0) {
+                                        setDialogState(() {
+                                          _isStockValid = false;
+                                        });
+                                        return;
+                                      }
+
                                       // Ürünü kaydet
                                       _saveProduct(
                                         nameController.text,
@@ -1023,6 +1111,7 @@ class _MenuManagementScreenState extends State<MenuManagementScreen>
                                         descriptionController.text,
                                         selectedCategory,
                                         isEditing ? productToEdit : null,
+                                        stockController.text,
                                       );
                                       Navigator.pop(context);
                                     },
@@ -1145,15 +1234,19 @@ class _MenuManagementScreenState extends State<MenuManagementScreen>
     String description,
     ProductCategory category,
     ProductItem? productToEdit,
+    String stockText,
   ) {
     final price = double.parse(priceText.replaceAll(',', '.'));
+    final stock = int.parse(stockText);
 
     final newProduct = ProductItem(
+      id: productToEdit?.id ?? '', // Mevcut ürün varsa ID'sini kullan, yoksa boş
       name: name,
       price: price,
       category: category,
       imageUrl: _imageUrl,
       description: description.isNotEmpty ? description : null,
+      stock: stock,
     );
 
     setState(() {
@@ -1673,7 +1766,7 @@ class _MenuManagementScreenState extends State<MenuManagementScreen>
       physics: const BouncingScrollPhysics(),
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 2,
-        childAspectRatio: 0.75,
+        childAspectRatio: 0.68, // 0.75'ten 0.68'e düşürüldü - daha uzun kartlar
         crossAxisSpacing: 16,
         mainAxisSpacing: 16,
       ),
@@ -1823,37 +1916,93 @@ class _MenuManagementScreenState extends State<MenuManagementScreen>
                       // Ürün açıklaması
                       if (product.description != null) ...[
                         const SizedBox(height: 4),
-                        Text(
-                          product.description!,
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey.shade600,
+                        Flexible(
+                          child: Text(
+                            product.description!,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey.shade600,
+                            ),
+                            maxLines: 3, // 2'den 3'e çıkarıldı
+                            overflow: TextOverflow.ellipsis,
                           ),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
                         ),
                       ],
 
                       const Spacer(),
 
-                      // Fiyat
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.green.shade50,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          '${product.price.toStringAsFixed(2)} ₺',
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.green.shade700,
+                      // Fiyat ve Stok
+                      Row(
+                        children: [
+                          // Fiyat
+                          Expanded(
+                            child: Column(
+                              children: [
+                                Text(
+                                  'Fiyat',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    color: Colors.grey.shade600,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.green.shade50,
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Text(
+                                    '${product.price.toStringAsFixed(2)} ₺',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.green.shade700,
+                                    ),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
-                        ),
+                          const SizedBox(width: 8),
+                          // Stok
+                          Column(
+                            children: [
+                              Text(
+                                'Stok',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: Colors.grey.shade600,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 4,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: product.stock > 0 ? Colors.blue.shade50 : Colors.red.shade50,
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Text(
+                                  '${product.stock}',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                    color: product.stock > 0 ? Colors.blue.shade700 : Colors.red.shade700,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
                       ),
                     ],
                   ),
@@ -1975,14 +2124,16 @@ class _MenuManagementScreenState extends State<MenuManagementScreen>
                       // Ürün açıklaması
                       if (product.description != null) ...[
                         const SizedBox(height: 4),
-                        Text(
-                          product.description!,
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey.shade600,
+                        Flexible(
+                          child: Text(
+                            product.description!,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey.shade600,
+                            ),
+                            maxLines: 2, // 1'den 2'ye çıkarıldı
+                            overflow: TextOverflow.ellipsis,
                           ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
                         ),
                       ],
 
@@ -1992,24 +2143,75 @@ class _MenuManagementScreenState extends State<MenuManagementScreen>
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          // Fiyat
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 4,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.green.shade50,
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Text(
-                              '${product.price.toStringAsFixed(2)} ₺',
-                              style: TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.green.shade700,
+                          // Fiyat ve Stok
+                          Row(
+                            children: [
+                              // Fiyat
+                              Column(
+                                children: [
+                                  Text(
+                                    'Fiyat',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      color: Colors.grey.shade600,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 4,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Colors.green.shade50,
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Text(
+                                      '${product.price.toStringAsFixed(2)} ₺',
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.green.shade700,
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
-                            ),
+                              const SizedBox(width: 8),
+                              // Stok
+                              Column(
+                                children: [
+                                  Text(
+                                    'Stok',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      color: Colors.grey.shade600,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 4,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: product.stock > 0 ? Colors.blue.shade50 : Colors.red.shade50,
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Text(
+                                      '${product.stock}',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold,
+                                        color: product.stock > 0 ? Colors.blue.shade700 : Colors.red.shade700,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
                           ),
 
                           // İşlem butonları

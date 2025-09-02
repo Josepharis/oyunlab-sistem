@@ -1,0 +1,40 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Admin kullanıcıları koleksiyonu - ilk kurulum için geçici olarak açık
+    match /admin_users/{userId} {
+      // Geçici olarak herkes okuyabilir ve yazabilir (ilk kurulum için)
+      allow read, write: if true;
+      
+      // Daha sonra bu kuralı aktif edeceğiz:
+      // allow read, write: if request.auth != null && 
+      //   (request.auth.token.email == 'yusuffrkn73@gmail.com' || 
+      //    exists(/databases/$(database)/documents/admin_users/$(request.auth.uid)) &&
+      //    get(/databases/$(database)/documents/admin_users/$(request.auth.uid)).data.role == 'admin');
+    }
+    
+    // Menü öğeleri koleksiyonu
+    match /menu_items/{itemId} {
+      // Herkes okuyabilir ve yazabilir (geçici olarak)
+      allow read, write: if true;
+    }
+    
+    // Müşteriler koleksiyonu
+    match /customers/{customerId} {
+      // Herkes okuyabilir ve yazabilir (geçici olarak)
+      allow read, write: if true;
+    }
+    
+    // Masa siparişleri koleksiyonu
+    match /table_orders/{orderId} {
+      // Herkes okuyabilir ve yazabilir (geçici olarak)
+      allow read, write: if true;
+    }
+    
+    // Diğer koleksiyonlar için varsayılan kurallar
+    match /{document=**} {
+      // Geçici olarak herkes erişebilir
+      allow read, write: if true;
+    }
+  }
+}

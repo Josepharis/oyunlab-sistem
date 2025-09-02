@@ -4,15 +4,21 @@ class Customer {
   final String parentName;
   final String phoneNumber;
   final DateTime entryTime;
-  final int durationMinutes;
+  final int durationMinutes; // Çocuk başına düşen süre (kardeş ekleme sonrası)
+  final int originalDurationMinutes; // Orijinal alınan toplam süre (değişmez)
   final int ticketNumber;
   final bool isPaused;
   final DateTime? pauseTime;
   final Duration? pausedDuration; // Duraklatma sırasında biriken toplam süre
   final double price; // Müşterinin ödediği ücret
   final int? explicitRemainingMinutes; // Firestore'dan doğrudan gelen kalan süre
+  final int? explicitRemainingSeconds; // Firestore'dan doğrudan gelen kalan süre saniye
   final bool isCompleted; // Müşteri tamamlandı mı?
   final DateTime? completedTime; // Tamamlanma zamanı
+  final int? usedMinutes; // Kullanılan süre (dakika cinsinden, sabit)
+  final int? usedSeconds; // Kullanılan süre (saniye cinsinden, sabit)
+  final int childCount; // Bu bilet için toplam çocuk sayısı
+  final bool isActive; // Müşteri aktif mi? (süre bitince false olur)
 
   Customer({
     required this.id,
@@ -21,14 +27,20 @@ class Customer {
     required this.phoneNumber,
     required this.entryTime,
     required this.durationMinutes,
+    this.originalDurationMinutes = 0, // Varsayılan 0, sonra set edilecek
     this.ticketNumber = 0,
     this.isPaused = false,
     this.pauseTime,
     this.pausedDuration,
     this.price = 0.0,
     this.explicitRemainingMinutes,
+    this.explicitRemainingSeconds,
     this.isCompleted = false,
     this.completedTime,
+    this.usedMinutes,
+    this.usedSeconds,
+    this.childCount = 1, // Varsayılan olarak 1 çocuk
+    this.isActive = true, // Varsayılan olarak aktif
   });
 
   // Giriş süresi (dakika cinsinden süreyi Duration nesnesine çevirir)
@@ -38,45 +50,58 @@ class Customer {
     // Normal süre
     final normalExitTime = entryTime.add(Duration(minutes: durationMinutes));
 
-    print(
-      'EXITTIME - Normal exitTime hesaplama: $entryTime + $durationMinutes dk = $normalExitTime',
-    );
+
 
     // Eğer daha önce duraklatılmış ve biriken süre varsa, çıkış süresini uzat
     if (pausedDuration != null) {
       final adjustedExitTime = normalExitTime.add(pausedDuration!);
-      print(
-        'EXITTIME - Duraklatma süresi eklenmiş: $pausedDuration -> $adjustedExitTime',
-      );
+
       return adjustedExitTime;
     }
 
-    print('EXITTIME - Nihai çıkış zamanı: $normalExitTime');
+
     return normalExitTime;
   }
 
   Duration get remainingTime {
-    // Eğer explicitRemainingMinutes değeri varsa, onu doğrudan kullan
-    if (explicitRemainingMinutes != null && explicitRemainingMinutes! > 0) {
-      print(
-        'Firestore\'dan gelen kalan süre kullanılıyor: $explicitRemainingMinutes dk',
-      );
-      return Duration(minutes: explicitRemainingMinutes!);
+    // Eğer explicitRemainingMinutes değeri varsa, onu doğrudan kullan (sabit değer, 0 bile olsa)
+    if (explicitRemainingMinutes != null) {
+      final seconds = explicitRemainingSeconds ?? 0;
+      return Duration(minutes: explicitRemainingMinutes!, seconds: seconds);
     }
 
+    // Sabit değer yok ise 0 döndür (süre akışı olmasın)
+    return const Duration();
+  }
+
+  /// Kullanılan süreyi döndürür (sabit değer)
+  Duration get usedTime {
+    // Eğer usedMinutes varsa onu kullan (sabit değer, 0 bile olsa)
+    if (usedMinutes != null) {
+      final seconds = usedSeconds ?? 0;
+      return Duration(minutes: usedMinutes!, seconds: seconds);
+    }
+
+    // Sabit değer yok ise 0 döndür (süre akışı olmasın)
+    return const Duration();
+  }
+
+  /// Aktif müşteriler için gerçek zamanlı kalan süre (anasayfa için)
+  Duration get activeRemainingTime {
+    // Eğer müşteri tamamlandıysa, sabit 0 döndür
+    if (isCompleted) {
+      return const Duration();
+    }
+
+    // Aktif müşteriler için gerçek zamanlı hesaplama
     final now = DateTime.now();
 
     if (!isPaused) {
       // Normal durum - duraklatılmamış
-      // Çıkış zamanı şu andan sonra mı kontrolü
       if (exitTime.isAfter(now)) {
         final remaining = exitTime.difference(now);
-        print(
-          'Hesaplanan kalan süre: ${remaining.inMinutes} dakika, ${remaining.inSeconds} saniye',
-        );
         return remaining;
       } else {
-        print('Süre dolmuş: exitTime=$exitTime, now=$now');
         return const Duration();
       }
     } else {
@@ -85,20 +110,28 @@ class Customer {
 
       if (exitTime.isAfter(pausedAt)) {
         final remaining = exitTime.difference(pausedAt);
-        print(
-          'Duraklatıldığındaki kalan süre: ${remaining.inMinutes} dakika, ${remaining.inSeconds} saniye',
-        );
         return remaining;
       } else {
-        print('Duraklatıldığında süre dolmuştu');
         return const Duration();
       }
     }
   }
 
+  /// Aktif müşteriler için gerçek zamanlı kullanılan süre (anasayfa için)
+  Duration get activeUsedTime {
+    // Eğer müşteri tamamlandıysa, sabit 0 döndür
+    if (isCompleted) {
+      return const Duration();
+    }
+
+    // Aktif müşteriler için gerçek zamanlı hesaplama
+    final now = DateTime.now();
+    return now.difference(entryTime);
+  }
+
   factory Customer.fromJson(Map<String, dynamic> json) {
     try {
-      print('Customer.fromJson: İşlenen veri: $json');
+
 
       final id = json['id'] as String? ?? '';
       final childName = json['childName'] as String? ?? '';
@@ -113,7 +146,7 @@ class Customer {
             entryTimeStr != null
                 ? DateTime.parse(entryTimeStr)
                 : DateTime.now();
-        print('Customer.fromJson: entryTime = $entryTime (from $entryTimeStr)');
+
       } catch (e) {
         print('Customer.fromJson: entryTime parse hatası: $e');
         entryTime = DateTime.now();
@@ -123,12 +156,16 @@ class Customer {
       DateTime? explicitExitTime;
       if (json['exitTime'] != null) {
         try {
-          final exitTimeStr = json['exitTime'] as String?;
-          if (exitTimeStr != null) {
-            explicitExitTime = DateTime.parse(exitTimeStr);
-            print(
-              'Customer.fromJson: explicitExitTime = $explicitExitTime (from $exitTimeStr)',
-            );
+          // Firebase'den gelen Timestamp tipini kontrol et
+          if (json['exitTime'] is String) {
+            explicitExitTime = DateTime.parse(json['exitTime'] as String);
+          } else if (json['exitTime'] is Map) {
+            // Timestamp objesi ise
+            final timestamp = json['exitTime'] as Map<String, dynamic>;
+            if (timestamp['_seconds'] != null) {
+              final seconds = timestamp['_seconds'] as int;
+              explicitExitTime = DateTime.fromMillisecondsSinceEpoch(seconds * 1000);
+            }
           }
         } catch (e) {
           print('Customer.fromJson: exitTime parse hatası: $e');
@@ -140,20 +177,28 @@ class Customer {
       final isPaused = json['isPaused'] as bool? ?? false;
       final isActive = json['isActive'] as bool? ?? true;
 
-      // Firestore'dan kalan dakika bilgisini al (varsa)
+      // Firestore'dan kalan dakika ve saniye bilgisini al (varsa)
       final remainingMinutes = json['remainingMinutes'] as int?;
+      final remainingSeconds = json['remainingSeconds'] as int?;
       if (remainingMinutes != null) {
-        print(
-          'Customer.fromJson: Firestore\'dan kalan dakika: $remainingMinutes',
-        );
+
       }
 
       // Duraklatma zamanı dönüşümünü güvenli hale getir
       DateTime? pauseTime;
       if (json['pauseTime'] != null) {
         try {
-          pauseTime = DateTime.parse(json['pauseTime'] as String);
-          print('Customer.fromJson: pauseTime = $pauseTime');
+          // Firebase'den gelen Timestamp tipini kontrol et
+          if (json['pauseTime'] is String) {
+            pauseTime = DateTime.parse(json['pauseTime'] as String);
+          } else if (json['pauseTime'] is Map) {
+            // Timestamp objesi ise
+            final timestamp = json['pauseTime'] as Map<String, dynamic>;
+            if (timestamp['_seconds'] != null) {
+              final seconds = timestamp['_seconds'] as int;
+              pauseTime = DateTime.fromMillisecondsSinceEpoch(seconds * 1000);
+            }
+          }
         } catch (e) {
           print('Customer.fromJson: pauseTime parse hatası: $e');
           pauseTime = null;
@@ -166,7 +211,7 @@ class Customer {
         try {
           final pausedMs = json['pausedDuration'] as int;
           pausedDuration = Duration(milliseconds: pausedMs);
-          print('Customer.fromJson: pausedDuration = $pausedDuration');
+
         } catch (e) {
           print('Customer.fromJson: pausedDuration parse hatası: $e');
           pausedDuration = null;
@@ -180,13 +225,29 @@ class Customer {
       DateTime? completedTime;
       if (json['completedTime'] != null) {
         try {
-          completedTime = DateTime.parse(json['completedTime'] as String);
+          // Firebase'den gelen Timestamp tipini kontrol et
+          if (json['completedTime'] is String) {
+            completedTime = DateTime.parse(json['completedTime'] as String);
+          } else if (json['completedTime'] is Map) {
+            // Timestamp objesi ise
+            final timestamp = json['completedTime'] as Map<String, dynamic>;
+            if (timestamp['_seconds'] != null) {
+              final seconds = timestamp['_seconds'] as int;
+              completedTime = DateTime.fromMillisecondsSinceEpoch(seconds * 1000);
+            }
+          }
           print('Customer.fromJson: completedTime = $completedTime');
         } catch (e) {
           print('Customer.fromJson: completedTime parse hatası: $e');
           completedTime = null;
         }
       }
+
+      // Kullanılan süre (dakika cinsinden)
+      final usedMinutes = json['usedMinutes'] as int?;
+
+      // Kullanılan saniye bilgisini al (varsa)
+      final usedSeconds = json['usedSeconds'] as int?;
 
       // Çıkış zamanı hesaplaması (durationMinutes kullanılarak)
       final calculatedExitTime = entryTime.add(
@@ -204,9 +265,7 @@ class Customer {
           adjustedEntryTime = now.subtract(
             Duration(minutes: durationMinutes - remainingMinutes),
           );
-          print(
-            'Customer.fromJson: Kalan süreye göre ayarlanmış giriş zamanı: $adjustedEntryTime',
-          );
+
         }
       }
 
@@ -217,6 +276,7 @@ class Customer {
         phoneNumber: phoneNumber,
         entryTime: adjustedEntryTime, // Ayarlanmış giriş zamanını kullan
         durationMinutes: durationMinutes,
+        originalDurationMinutes: json['originalDurationMinutes'] as int? ?? durationMinutes, // Varsayılan durationMinutes
         ticketNumber: ticketNumber,
         isPaused: isPaused,
         pauseTime: pauseTime,
@@ -224,14 +284,17 @@ class Customer {
         price: price,
         explicitRemainingMinutes:
             remainingMinutes, // Firestore'dan gelen değeri kullan
+        explicitRemainingSeconds:
+            remainingSeconds, // Kalan süre saniyesi
         isCompleted: isCompleted,
         completedTime: completedTime,
+        usedMinutes: usedMinutes,
+        usedSeconds: usedSeconds,
+        childCount: json['childCount'] as int? ?? 1, // Varsayılan 1
+        isActive: isActive, // isActive field'ını ekle
       );
 
-      print('Customer.fromJson: Hesaplanan exitTime = ${customer.exitTime}');
-      print(
-        'Customer.fromJson: Hesaplanan remainingTime = ${customer.remainingTime.inMinutes} dakika',
-      );
+
 
       return customer;
     } catch (e, stackTrace) {
@@ -260,13 +323,21 @@ class Customer {
       'phoneNumber': phoneNumber,
       'entryTime': entryTime.toIso8601String(),
       'durationMinutes': durationMinutes,
+      'originalDurationMinutes': originalDurationMinutes,
       'ticketNumber': ticketNumber,
       'isPaused': isPaused,
       'pauseTime': pauseTime?.toIso8601String(),
       'pausedDuration': pausedDuration?.inMilliseconds,
       'price': price,
+      'explicitRemainingMinutes': explicitRemainingMinutes,
+      'explicitRemainingSeconds': explicitRemainingSeconds,
+      'remainingMinutes': explicitRemainingMinutes, // Firebase uyumluluğu için
       'isCompleted': isCompleted,
       'completedTime': completedTime?.toIso8601String(),
+      'usedMinutes': usedMinutes,
+      'usedSeconds': usedSeconds,
+      'childCount': childCount,
+      'isActive': isActive,
     };
   }
 
@@ -278,14 +349,20 @@ class Customer {
     String? phoneNumber,
     DateTime? entryTime,
     int? durationMinutes,
+    int? originalDurationMinutes,
     int? ticketNumber,
     bool? isPaused,
     DateTime? pauseTime,
     Duration? pausedDuration,
     double? price,
     int? explicitRemainingMinutes,
+    int? explicitRemainingSeconds,
     bool? isCompleted,
     DateTime? completedTime,
+    int? usedMinutes,
+    int? usedSeconds,
+    int? childCount,
+    bool? isActive,
   }) {
     return Customer(
       id: id ?? this.id,
@@ -294,6 +371,7 @@ class Customer {
       phoneNumber: phoneNumber ?? this.phoneNumber,
       entryTime: entryTime ?? this.entryTime,
       durationMinutes: durationMinutes ?? this.durationMinutes,
+      originalDurationMinutes: originalDurationMinutes ?? this.originalDurationMinutes,
       ticketNumber: ticketNumber ?? this.ticketNumber,
       isPaused: isPaused ?? this.isPaused,
       pauseTime: pauseTime ?? this.pauseTime,
@@ -301,13 +379,19 @@ class Customer {
       price: price ?? this.price,
       explicitRemainingMinutes:
           explicitRemainingMinutes ?? this.explicitRemainingMinutes,
+      explicitRemainingSeconds:
+          explicitRemainingSeconds ?? this.explicitRemainingSeconds,
       isCompleted: isCompleted ?? this.isCompleted,
       completedTime: completedTime ?? this.completedTime,
+      usedMinutes: usedMinutes ?? this.usedMinutes,
+      usedSeconds: usedSeconds ?? this.usedSeconds,
+      childCount: childCount ?? this.childCount,
+      isActive: isActive ?? this.isActive,
     );
   }
 
   @override
   String toString() {
-    return 'Customer{id: $id, childName: $childName, remainingTime: ${remainingTime.inMinutes} dk}';
+    return 'Customer{id: $id, childName: $childName, remainingTime: ${remainingTime.inMinutes} dk, usedTime: ${usedTime.inMinutes} dk}';
   }
 }

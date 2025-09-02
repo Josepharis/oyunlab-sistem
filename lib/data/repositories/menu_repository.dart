@@ -30,6 +30,8 @@ class MenuRepository {
       if (snapshot.docs.isNotEmpty) {
         _menuItems = snapshot.docs.map((doc) {
           final data = doc.data() as Map<String, dynamic>;
+          // Firestore document ID'sini ekle
+          data['id'] = doc.id;
           return ProductItem.fromJson(data);
         }).toList();
 
@@ -85,6 +87,28 @@ class MenuRepository {
     }
   }
 
+  // Ürün stokunu güncelle
+  Future<void> updateProductStock(String productId, int newStock) async {
+    try {
+      print("🔄 Ürün stoku güncelleniyor: ID=$productId, Yeni stok=$newStock");
+      
+      // Firestore'da stok güncelle
+      final docRef = _menuCollection.doc(productId);
+      await docRef.update({'stock': newStock});
+      
+      // Local listeyi güncelle
+      final index = _menuItems.indexWhere((item) => item.id == productId);
+      if (index != -1) {
+        _menuItems[index] = _menuItems[index].copyWith(stock: newStock);
+      }
+      
+      print("✅ Stok başarıyla güncellendi");
+    } catch (e) {
+      print("❌ Stok güncelleme hatası: $e");
+      rethrow;
+    }
+  }
+
   // Menüyü temizle
   Future<void> clearMenu() async {
     try {
@@ -102,68 +126,48 @@ class MenuRepository {
 
   // Test ürünleri oluştur
   Future<void> createTestProducts() async {
-    final testItems = [
-      // Yiyecekler
+    final testItems = _createTestProducts();
+    await saveMenuItems(testItems);
+  }
+
+  // Test ürünleri oluştur
+  List<ProductItem> _createTestProducts() {
+    return [
       ProductItem(
-        name: "Hamburger",
+        id: 'test_food_1',
+        name: 'Patates Kızartması',
+        price: 35.0,
+        category: ProductCategory.food,
+        stock: 50,
+      ),
+      ProductItem(
+        id: 'test_food_2',
+        name: 'Çıtır Tavuk',
         price: 45.0,
         category: ProductCategory.food,
-        description: "Lezzetli hamburger",
+        stock: 30,
       ),
       ProductItem(
-        name: "Patates Kızartması",
-        price: 25.0,
+        id: 'test_food_3',
+        name: 'Tost',
+        price: 30.0,
         category: ProductCategory.food,
-        description: "Çıtır patates",
-      ),
-
-      // İçecekler
-      ProductItem(
-        name: "Kola",
-        price: 15.0,
-        category: ProductCategory.drink,
-        description: "Soğuk kola",
+        stock: 25,
       ),
       ProductItem(
-        name: "Ayran",
+        id: 'test_drink_1',
+        name: 'Su',
         price: 10.0,
         category: ProductCategory.drink,
-        description: "Taze ayran",
+        stock: 100,
       ),
-
-      // Tatlılar
       ProductItem(
-        name: "Çikolatalı Pasta",
-        price: 30.0,
-        category: ProductCategory.dessert,
-        description: "Pasta dilimi",
-      ),
-
-      // Oyuncaklar
-      ProductItem(
-        name: "Oyuncak Araba",
-        price: 35.0,
-        category: ProductCategory.toy,
-        description: "Oyuncak araba",
-      ),
-
-      // Oyun Grupları
-      ProductItem(
-        name: "Grup Oyunu",
-        price: 100.0,
-        category: ProductCategory.game,
-        description: "30 dakika",
-      ),
-
-      // Kodlama
-      ProductItem(
-        name: "Kodlama Dersi",
-        price: 120.0,
-        category: ProductCategory.coding,
-        description: "Scratch eğitimi",
+        id: 'test_drink_2',
+        name: 'Kola',
+        price: 20.0,
+        category: ProductCategory.drink,
+        stock: 75,
       ),
     ];
-
-    await saveMenuItems(testItems);
   }
 }
