@@ -467,21 +467,10 @@ class _CreateTaskDialogState extends State<CreateTaskDialog>
     });
 
     try {
-      await Future.delayed(const Duration(milliseconds: 500));
-
-      final task = Task(
-        id: DateTime.now().millisecondsSinceEpoch.toString(),
+      final task = Task.create(
         title: _titleController.text.trim(),
         description: _descriptionController.text.trim(),
         difficulty: _selectedDifficulty,
-        status: TaskStatus.pending,
-        createdAt: DateTime.now(),
-        assignedStaffIds: [],
-        completedByStaffIds: [],
-        completedAt: null,
-        completedImageUrl: null,
-        complaints: [],
-        isActive: true,
       );
 
       if (mounted) {

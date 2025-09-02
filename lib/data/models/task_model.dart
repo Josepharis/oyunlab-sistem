@@ -69,8 +69,8 @@ class Task {
       'description': description,
       'difficulty': difficulty.name,
       'status': status.name,
-      'createdAt': createdAt.toIso8601String(),
-      'completedAt': completedAt?.toIso8601String(),
+      'createdAt': Timestamp.fromDate(createdAt),
+      'completedAt': completedAt != null ? Timestamp.fromDate(completedAt!) : null,
       'assignedStaffIds': assignedStaffIds,
       'completedByStaffIds': completedByStaffIds,
       'completedImageUrl': completedImageUrl,
@@ -93,10 +93,14 @@ class Task {
         orElse: () => TaskStatus.pending,
       ),
       createdAt: json['createdAt'] != null
-          ? DateTime.parse(json['createdAt'])
+          ? (json['createdAt'] is Timestamp 
+              ? (json['createdAt'] as Timestamp).toDate()
+              : DateTime.parse(json['createdAt']))
           : DateTime.now(),
       completedAt: json['completedAt'] != null
-          ? DateTime.parse(json['completedAt'])
+          ? (json['completedAt'] is Timestamp 
+              ? (json['completedAt'] as Timestamp).toDate()
+              : DateTime.parse(json['completedAt']))
           : null,
       assignedStaffIds: List<String>.from(json['assignedStaffIds'] ?? []),
       completedByStaffIds: List<String>.from(json['completedByStaffIds'] ?? []),
@@ -160,7 +164,7 @@ class TaskComplaint {
     return {
       'id': id,
       'complaintText': complaintText,
-      'createdAt': createdAt.toIso8601String(),
+      'createdAt': Timestamp.fromDate(createdAt),
       'isAnonymous': isAnonymous,
     };
   }
@@ -170,7 +174,9 @@ class TaskComplaint {
       id: json['id'] ?? '',
       complaintText: json['complaintText'] ?? '',
       createdAt: json['createdAt'] != null
-          ? DateTime.parse(json['createdAt'])
+          ? (json['createdAt'] is Timestamp 
+              ? (json['createdAt'] as Timestamp).toDate()
+              : DateTime.parse(json['createdAt']))
           : DateTime.now(),
       isAnonymous: json['isAnonymous'] ?? true,
     );

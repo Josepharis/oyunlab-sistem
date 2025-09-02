@@ -3,6 +3,7 @@ import '../../data/repositories/customer_repository.dart';
 import '../../data/repositories/menu_repository.dart';
 import '../../data/repositories/business_settings_repository.dart';
 import '../../data/repositories/staff_repository.dart';
+import '../../data/repositories/task_repository.dart';
 import '../../data/services/firebase_service.dart';
 
 /// Servis locator sınıfı, uygulama genelinde servis ve repository'lere
@@ -56,6 +57,13 @@ class ServiceLocator {
         );
       }
 
+      // TaskRepository'yi de fallback olarak ekle
+      if (!locator.isRegistered<TaskRepository>()) {
+        locator.registerLazySingleton<TaskRepository>(
+          () => TaskRepository(locator<FirebaseService>()),
+        );
+      }
+
       _isSetup = true;
     } catch (e) {
       print('Fallback servisler başlatılırken de hata oluştu: $e');
@@ -94,6 +102,11 @@ class ServiceLocator {
     // Personel repository
     locator.registerLazySingleton<StaffRepository>(
       () => StaffRepository(),
+    );
+
+    // Görev repository
+    locator.registerLazySingleton<TaskRepository>(
+      () => TaskRepository(locator<FirebaseService>()),
     );
   }
 }

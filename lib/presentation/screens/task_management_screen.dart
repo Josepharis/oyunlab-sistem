@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../data/models/task_model.dart';
+import '../../data/repositories/task_repository.dart';
+import '../../core/di/service_locator.dart';
 import '../widgets/task_card.dart';
 import '../widgets/create_task_dialog.dart';
 
@@ -13,8 +15,7 @@ class TaskManagementScreen extends StatefulWidget {
 class _TaskManagementScreenState extends State<TaskManagementScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
-  // TODO: Dependency injection ile TaskRepository alınmalı
-  // late TaskRepository _taskRepository;
+  late TaskRepository _taskRepository;
   List<Task> _pendingTasks = [];
   List<Task> _completedTasks = [];
   bool _isLoading = false;
@@ -23,10 +24,17 @@ class _TaskManagementScreenState extends State<TaskManagementScreen>
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
-    // TODO: Dependency injection ile TaskRepository alınmalı
-    // _taskRepository = context.read<TaskRepository>();
-    _loadTasks();
+    _taskRepository = ServiceLocator.locator<TaskRepository>();
+    
+    // Widget'ın mounted olduğundan emin ol
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _loadTasks();
+      }
+    });
   }
+
+
 
   @override
   void dispose() {
@@ -35,85 +43,65 @@ class _TaskManagementScreenState extends State<TaskManagementScreen>
   }
 
   Future<void> _loadTasks() async {
+    // Widget mounted değilse işlemi durdur
+    if (!mounted) return;
+    
     setState(() {
       _isLoading = true;
     });
 
     try {
-      // TODO: TaskRepository implement edildikten sonra gerçek veriler kullanılacak
-      // final pendingTasks = await _taskRepository.getPendingTasks();
-      // final completedTasks = await _taskRepository.getCompletedTasks();
-      
-      // Geçici mock data
-      await Future.delayed(const Duration(milliseconds: 500));
-      final pendingTasks = _getMockPendingTasks();
-      final completedTasks = _getMockCompletedTasks();
+      // Gerçek verileri TaskRepository'den al
+      final pendingTasks = await _taskRepository.getPendingTasks();
+      final completedTasks = await _taskRepository.getCompletedTasks();
+
+      // Widget hala mounted mı kontrol et
+      if (!mounted) return;
 
       setState(() {
         _pendingTasks = pendingTasks;
         _completedTasks = completedTasks;
       });
     } catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Görevler yüklenirken hata: $e')),
       );
     } finally {
-      setState(() {
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 
-  List<Task> _getMockPendingTasks() {
-    return [
-      Task.create(
-        title: 'Oyun Alanı Temizliği',
-        description: 'Oyun alanındaki tüm oyuncakları topla ve yerleri temizle',
-        difficulty: TaskDifficulty.medium,
-      ).copyWith(
-        id: '1',
-        createdAt: DateTime.now().subtract(const Duration(hours: 2)),
-      ),
-      Task.create(
-        title: 'Güvenlik Kontrolü',
-        description: 'Tüm güvenlik ekipmanlarını kontrol et ve eksik olanları raporla',
-        difficulty: TaskDifficulty.hard,
-      ).copyWith(
-        id: '2',
-        createdAt: DateTime.now().subtract(const Duration(hours: 1)),
-      ),
-    ];
-  }
 
-  List<Task> _getMockCompletedTasks() {
-    return [
-      Task.create(
-        title: 'Giriş Temizliği',
-        description: 'Giriş alanını temizle ve dezenfekte et',
-        difficulty: TaskDifficulty.easy,
-      ).copyWith(
-        id: '3',
-        status: TaskStatus.completed,
-        createdAt: DateTime.now().subtract(const Duration(hours: 4)),
-        completedAt: DateTime.now().subtract(const Duration(hours: 2)),
-        completedByStaffIds: ['staff1', 'staff2'],
-        completedImageUrl: 'https://example.com/cleaning.jpg',
-      ),
-    ];
-  }
 
   Future<void> _createTask() async {
     await showDialog(
       context: context,
       builder: (context) => CreateTaskDialog(
-        onTaskCreated: (Task task) {
-          setState(() {
-            _pendingTasks.insert(0, task);
-          });
-          
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Görev başarıyla oluşturuldu')),
-          );
+        onTaskCreated: (Task task) async {
+          try {
+            // Görevi veritabanına kaydet
+            await _taskRepository.createTask(task);
+            
+            // Widget hala mounted mı kontrol et
+            if (!mounted) return;
+            
+            // Verileri yeniden yükle (Firebase'den güncel verileri al)
+            await _loadTasks();
+            
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Görev başarıyla oluşturuldu')),
+            );
+          } catch (e) {
+            if (!mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Görev oluşturulurken hata: $e')),
+            );
+          }
         },
       ),
     );
@@ -194,28 +182,50 @@ class _TaskManagementScreenState extends State<TaskManagementScreen>
                                         child: TaskCard(
                               task: task,
                               onTaskCompleted: () async {
-                                // TODO: TaskRepository implement edildikten sonra gerçek veriler kullanılacak
-                                // await _loadTasks();
-                                
-                                // Geçici olarak mock data'yı güncelle
-                                setState(() {
-                                  final completedTask = task.copyWith(
-                                    status: TaskStatus.completed,
-                                    completedAt: DateTime.now(),
-                                    completedByStaffIds: ['current_staff'],
+                                try {
+                                  // Görevi veritabanında tamamla
+                                  await _taskRepository.completeTask(
+                                    task.id,
+                                    ['current_staff'], // TODO: Gerçek staff ID'si kullanılacak
+                                    null, // completedImageUrl
                                   );
-                                  _pendingTasks.remove(task);
-                                  _completedTasks.insert(0, completedTask);
-                                });
+                                  
+                                  // Widget hala mounted mı kontrol et
+                                  if (!mounted) return;
+                                  
+                                  // Verileri yeniden yükle (Firebase'den güncel verileri al)
+                                  await _loadTasks();
+                                  
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(content: Text('Görev tamamlandı')),
+                                  );
+                                } catch (e) {
+                                  if (!mounted) return;
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(content: Text('Görev tamamlanırken hata: $e')),
+                                  );
+                                }
                               },
-                              onTaskDeleted: () {
-                                setState(() {
-                                  _pendingTasks.remove(task);
-                                });
-                                
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('Görev silindi')),
-                                );
+                              onTaskDeleted: () async {
+                                try {
+                                  // Görevi veritabanından sil
+                                  await _taskRepository.deleteTask(task.id);
+                                  
+                                  // Widget hala mounted mı kontrol et
+                                  if (!mounted) return;
+                                  
+                                  // Verileri yeniden yükle (Firebase'den güncel verileri al)
+                                  await _loadTasks();
+                                  
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(content: Text('Görev silindi')),
+                                  );
+                                } catch (e) {
+                                  if (!mounted) return;
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(content: Text('Görev silinirken hata: $e')),
+                                  );
+                                }
                               },
                             ),
           );
