@@ -1876,124 +1876,145 @@ class _HomeScreenState extends State<HomeScreen>
 
   // Kardeş Çıkarma Dialog
   void _showRemoveSiblingDialog(Customer customer) {
-    // Aynı bilet numarasına sahip tüm kardeşleri bul (seçilen çocuk dahil)
-    final siblings = widget.customerRepository.customers
+    // Gerçek müşteri sayısını kontrol et
+    final currentSiblings = widget.customerRepository.customers
         .where((c) => c.ticketNumber == customer.ticketNumber && !c.isCompleted)
         .toList();
-
-    if (siblings.length <= 1) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Bu çocuğun kayıtlı kardeşi bulunmuyor'),
-          backgroundColor: Colors.orange,
-          behavior: SnackBarBehavior.floating,
-        ),
+    
+    // Debug: Gerçek müşteri sayısını kontrol et
+    print('DEBUG: Kardeş çıkarma kontrol:');
+    print('  - childCount: ${customer.childCount}');
+    print('  - Gerçek müşteri sayısı: ${currentSiblings.length}');
+    
+    // childCount'a göre kontrol et (çocuk sayısına göre)
+    if (customer.childCount < 2) {
+      showDialog(
+        context: context,
+        builder: (context) {
+          return AlertDialog(
+            title: const Text('Uyarı'),
+            content: const Text('Kardeş yok'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Tamam'),
+              ),
+            ],
+          );
+        },
       );
       return;
     }
 
-    // DEBUG: Hangi süreler alınıyor kontrol et
-    print('=== DEBUG: KARDEŞ ÇIKARMA DIALOG ===');
-    print('Müşteri: ${customer.childName}');
-    print('Bilet No: ${customer.ticketNumber}');
+    // Kardeş varsa detaylı dialog aç (kardeş ekleme gibi)
+    int removeCount = 1; // Çıkarılacak kardeş sayısı
     
-
-
+    // Toplam kalan süre hesapla
     int totalRemainingSeconds = 0;
-    Map<String, int> siblingRemainingSeconds = {};
-    for (final sibling in siblings) {
-      final siblingSeconds = sibling.currentRemainingSeconds;
-      totalRemainingSeconds += siblingSeconds;
-      siblingRemainingSeconds[sibling.id] = siblingSeconds;
-      print('${sibling.childName}: $siblingSeconds saniye (${siblingSeconds ~/ 60}:${(siblingSeconds % 60).toString().padLeft(2, '0')})');
+    for (final child in currentSiblings) {
+      totalRemainingSeconds += child.currentRemainingSeconds;
     }
-    print('Toplam süre: $totalRemainingSeconds saniye (${totalRemainingSeconds ~/ 60}:${(totalRemainingSeconds % 60).toString().padLeft(2, '0')})');
-    print('=====================================');
 
     showDialog(
       context: context,
       builder: (context) {
         return StatefulBuilder(
           builder: (context, setState) {
+            // Mevcut çocuk sayısı (childCount'dan al)
+            final currentChildCount = customer.childCount;
+            // Çıkarılacak çocuk sayısı
+            final childrenToRemove = removeCount;
+            // Kalan çocuk sayısı
+            final remainingChildren = currentChildCount - childrenToRemove;
+            
+            // Kalan çocuklara düşecek süre (saniye) - ÇIKARMA MANTIĞI
+            final perChildSeconds = remainingChildren > 0 ? totalRemainingSeconds ~/ remainingChildren : 0;
+            final perChildMinutes = perChildSeconds ~/ 60;
+            final perChildRemainingSeconds = perChildSeconds % 60;
+            
+            // Debug: Hesaplama bilgilerini log'la
+            print('DEBUG: Kardeş çıkarma hesaplama:');
+            print('  - Mevcut çocuk sayısı: $currentChildCount');
+            print('  - Çıkarılacak çocuk sayısı: $childrenToRemove');
+            print('  - Kalan çocuk sayısı: $remainingChildren');
+            print('  - Toplam kalan süre: $totalRemainingSeconds saniye');
+            print('  - Kalan çocuklara düşecek süre: $perChildSeconds saniye ($perChildMinutes dk $perChildRemainingSeconds sn)');
+
             return AlertDialog(
               title: const Text('Kardeş Çıkar'),
               content: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Text(
-                    'Çıkarmak istediğiniz kardeşi seçin',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: AppTheme.secondaryTextColor,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  // Kardeş listesi
-                  Container(
-                    constraints: BoxConstraints(
-                      maxHeight: MediaQuery.of(context).size.height * 0.4,
-                    ),
-                    width: double.infinity,
-                    child: SingleChildScrollView(
-                      child: Column(
-                        children: siblings.map((sibling) {
-                          final remainingMinutes = sibling.currentRemainingSeconds ~/ 60;
-                          return ListTile(
-                            title: Text(sibling.childName),
-                            subtitle: Text('Kalan süre: $remainingMinutes dakika'),
-                            trailing: ElevatedButton(
-                              onPressed: () async {
-                                // Kardeşi çıkar
-                                final updatedSiblings = List<Customer>.from(siblings)..remove(sibling);
-                                
-                                // Kalan süreyi diğer kardeşler arasında paylaştır
-                                if (updatedSiblings.isNotEmpty) {
-                                  final totalRemainingSeconds = sibling.currentRemainingSeconds;
-                                  final perChildSeconds = totalRemainingSeconds ~/ updatedSiblings.length;
-                                  
-                                  for (var remainingSibling in updatedSiblings) {
-                                    final elapsedTime = DateTime.now().difference(remainingSibling.entryTime);
-                                    final totalDurationSeconds = elapsedTime.inSeconds + perChildSeconds;
-                                    // final newDurationMinutes = totalDurationSeconds ~/ 60;
-                                    
-                                    final updatedCustomer = remainingSibling.copyWith(
-                                      totalSeconds: totalDurationSeconds,
-                                      childCount: updatedSiblings.length,
-                                    );
-                                    
-                                    await widget.customerRepository.updateCustomer(updatedCustomer);
-                                  }
-                                }
-                                
-                                // Çıkarılan kardeşin süresini sıfırla
-                                final removedSibling = sibling.copyWith(
-                                  totalSeconds: 0,
-                                  childCount: 1,
-                                );
-                                await widget.customerRepository.updateCustomer(removedSibling);
-                                
-                                if (context.mounted) {
-                                  Navigator.pop(context);
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text('${sibling.childName} çıkarıldı ve süresi diğer kardeşlere dağıtıldı'),
-                                      backgroundColor: Colors.orange.shade600,
-                                      behavior: SnackBarBehavior.floating,
-                                    ),
-                                  );
+                  // Çıkarılacak kardeş sayısı seçici
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        'Çıkarılacak kardeş sayısı:',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: AppTheme.primaryColor,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
+                        decoration: BoxDecoration(
+                          color: AppTheme.primaryColor.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          children: [
+                            IconButton(
+                              icon: Icon(
+                                Icons.remove,
+                                color: AppTheme.primaryColor,
+                              ),
+                              onPressed: () {
+                                if (removeCount > 1) {
+                                  setState(() {
+                                    removeCount--;
+                                  });
                                 }
                               },
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.red.shade600,
-                                foregroundColor: Colors.white,
-                              ),
-                              child: const Text('Çıkar'),
+                              iconSize: 20,
+                              padding: EdgeInsets.zero,
+                              constraints: BoxConstraints.tight(Size(32, 32)),
                             ),
-                          );
-                        }).toList(),
+                            Container(
+                              padding: EdgeInsets.symmetric(horizontal: 8),
+                              child: Text(
+                                '$removeCount',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppTheme.primaryColor,
+                                ),
+                              ),
+                            ),
+                            IconButton(
+                              icon: Icon(
+                                Icons.add,
+                                color: AppTheme.primaryColor,
+                              ),
+                              onPressed: () {
+                                if (removeCount < currentChildCount - 1) {
+                                  setState(() {
+                                    removeCount++;
+                                  });
+                                }
+                              },
+                              iconSize: 20,
+                              padding: EdgeInsets.zero,
+                              constraints: BoxConstraints.tight(Size(32, 32)),
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
+                    ],
                   ),
+                  const SizedBox(height: 16),
+
+                  // Süre bilgisi
                   Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
@@ -2005,17 +2026,59 @@ class _HomeScreenState extends State<HomeScreen>
                       ),
                     ),
                     child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        Text(
+                          'Çıkarma Bilgisi',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                            color: AppTheme.primaryColor,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
                             const Text(
-                              'Toplam çocuk sayısı:',
+                              'Mevcut çocuk sayısı:',
                               style: TextStyle(fontSize: 13),
                             ),
                             Text(
-                              '${siblings.length}',
+                              '$currentChildCount',
+                              style: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text(
+                              'Çıkarılacak çocuk sayısı:',
+                              style: TextStyle(fontSize: 13),
+                            ),
+                            Text(
+                              '$childrenToRemove',
+                              style: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text(
+                              'Kalan çocuk sayısı:',
+                              style: TextStyle(fontSize: 13),
+                            ),
+                            Text(
+                              '$remainingChildren',
                               style: const TextStyle(
                                 fontSize: 13,
                                 fontWeight: FontWeight.bold,
@@ -2040,73 +2103,27 @@ class _HomeScreenState extends State<HomeScreen>
                             ),
                           ],
                         ),
+                        if (remainingChildren > 0) ...[
+                          const SizedBox(height: 4),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Text(
+                                'Kalan çocuklara düşecek süre:',
+                                style: TextStyle(fontSize: 13),
+                              ),
+                              Text(
+                                '$perChildMinutes dk $perChildRemainingSeconds sn',
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.green,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
                       ],
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-
-                  // Kardeş listesi
-                  Container(
-                    constraints: BoxConstraints(
-                      maxHeight: MediaQuery.of(context).size.height * 0.3,
-                    ),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: Colors.grey.shade200),
-                    ),
-                    child: SingleChildScrollView(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children:
-                            siblings.map((sibling) {
-                              return Column(
-                                children: [
-                                  ListTile(
-                                    leading: CircleAvatar(
-                                      backgroundColor: AppTheme.primaryColor
-                                          .withOpacity(0.1),
-                                      child: Text(
-                                        sibling.childName
-                                            .substring(0, 1)
-                                            .toUpperCase(),
-                                        style: TextStyle(
-                                          color: AppTheme.primaryColor,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                    ),
-                                    title: Text(sibling.childName),
-                                    subtitle: Text(
-                                      'Kalan: ${(siblingRemainingSeconds[sibling.id]! ~/ 60)} dk ${siblingRemainingSeconds[sibling.id]! % 60} sn',
-                                    ),
-                                    trailing: ElevatedButton.icon(
-                                      icon: const Icon(
-                                        Icons.remove_circle_outline,
-                                        size: 16,
-                                      ),
-                                      label: const Text('Çıkar'),
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: Colors.red.shade100,
-                                        foregroundColor: Colors.red.shade700,
-                                        elevation: 0,
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 12,
-                                          vertical: 6,
-                                        ),
-                                      ),
-                                      onPressed: () {
-                                        _removeSibling(sibling, siblings);
-                                        Navigator.pop(context);
-                                      },
-                                    ),
-                                  ),
-                                  if (siblings.indexOf(sibling) <
-                                      siblings.length - 1)
-                                    const Divider(height: 1),
-                                ],
-                              );
-                            }).toList(),
-                      ),
                     ),
                   ),
                 ],
@@ -2114,7 +2131,15 @@ class _HomeScreenState extends State<HomeScreen>
               actions: [
                 TextButton(
                   onPressed: () => Navigator.pop(context),
-                  child: const Text('Kapat'),
+                  child: const Text('İptal'),
+                ),
+                ElevatedButton(
+                  onPressed: () async {
+                    // Çıkarma işlemini yap
+                    await _performSiblingRemoval(customer, removeCount, currentChildCount, totalRemainingSeconds);
+                    Navigator.pop(context);
+                  },
+                  child: const Text('Çıkar'),
                 ),
               ],
             );
@@ -2124,79 +2149,76 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  // Kardeş çıkarma işlemi - YENİ SİSTEM
-  void _removeSibling(Customer siblingToRemove, List<Customer> allSiblings) {
-    // Çıkarma işleminden sonra kalan kardeş sayısı
-    final remainingSiblings =
-        allSiblings.where((s) => s.id != siblingToRemove.id).toList();
-
-    if (remainingSiblings.isEmpty) {
-      // Son çocuk da çıkarılıyorsa sadece sil
-      widget.customerRepository.deleteCustomer(siblingToRemove.id);
-
+  // Kardeş çıkarma işlemi
+  Future<void> _performSiblingRemoval(Customer customer, int removeCount, int currentChildCount, int totalRemainingSeconds) async {
+    try {
+      // Kalan çocuk sayısı
+      final remainingChildren = currentChildCount - removeCount;
+      
+      // Kalan çocuklara düşecek süre
+      final perChildSeconds = remainingChildren > 0 ? totalRemainingSeconds ~/ remainingChildren : 0;
+      
+      // Mevcut kardeşleri bul
+      final currentSiblings = widget.customerRepository.customers
+          .where((c) => c.ticketNumber == customer.ticketNumber && !c.isCompleted)
+          .toList();
+      
+      if (remainingChildren <= 0) {
+        // Tüm çocukları çıkar - hepsini tamamlandı olarak işaretle
+        for (var sibling in currentSiblings) {
+          await widget.customerRepository.completeCustomer(sibling.id);
+        }
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Tüm çocuklar çıkarıldı'),
+            backgroundColor: Colors.green.shade600,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        return;
+      }
+      
+      // Kalan çocukların süresini güncelle
+      for (var sibling in currentSiblings) {
+        // Geçen süre (giriş zamanından şu ana kadar)
+        final elapsedTime = DateTime.now().difference(sibling.entryTime);
+        
+        // Yeni toplam süre = geçen süre + kişi başı kalan süre
+        final newTotalSeconds = elapsedTime.inSeconds + perChildSeconds;
+        
+        final updatedCustomer = sibling.copyWith(
+          totalSeconds: newTotalSeconds,
+          childCount: remainingChildren,
+          remainingMinutes: perChildSeconds ~/ 60,
+          remainingSeconds: perChildSeconds % 60,
+        );
+        
+        await widget.customerRepository.updateCustomer(updatedCustomer);
+      }
+      
+      // Başarılı mesajı göster
+      final perChildMinutes = perChildSeconds ~/ 60;
+      final perChildRemainingSeconds = perChildSeconds % 60;
+      
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('${siblingToRemove.childName} çıkarıldı'),
+          content: Text('$removeCount çocuk çıkarıldı. Kalan ${remainingChildren} çocuğun süresi: $perChildMinutes dk $perChildRemainingSeconds sn'),
           backgroundColor: Colors.green.shade600,
           behavior: SnackBarBehavior.floating,
         ),
       );
-      return;
-    }
-
-    // YENİ SİSTEM - Toplam kalan süre hesaplama
-    int totalRemainingSeconds = 0;
-    for (final child in allSiblings) {
-      totalRemainingSeconds += child.currentRemainingSeconds;
-    }
-
-    // ÇIKARMA SONRASI KİŞİ BAŞI SÜREYİ HESAPLA = TOPLAM KALAN SÜRE / KALAN ÇOCUK SAYISI
-    final perChildSeconds = totalRemainingSeconds ~/ remainingSiblings.length;
-    
-    // Debug: Hesaplama bilgilerini log'la
-    print('DEBUG: Kardeş çıkarma - Toplam kalan süre: $totalRemainingSeconds saniye');
-    print('DEBUG: Kardeş çıkarma - Kalan çocuk sayısı: ${remainingSiblings.length}');
-    print('DEBUG: Kardeş çıkarma - Kişi başı süre: $perChildSeconds saniye');
-
-    // KALAN KARDEŞLERE YENİ SÜREYİ DAĞIT
-    for (var sibling in remainingSiblings) {
-      // Geçen süre (giriş zamanından şu ana kadar)
-      final elapsedTime = DateTime.now().difference(sibling.entryTime);
-
-      // Yeni toplam süre = geçen süre + kişi başı kalan süre
-      final newTotalSeconds = elapsedTime.inSeconds + perChildSeconds;
-
-      // YENİ SİSTEM - Customer güncelleme
-      final updatedCustomer = sibling.copyWith(
-        totalSeconds: newTotalSeconds,
-        childCount: remainingSiblings.length,
-        siblingIds: remainingSiblings.map((s) => s.id).toList(),
-        remainingMinutes: perChildSeconds ~/ 60, // Statik kalan süre güncelle
-        remainingSeconds: perChildSeconds % 60, // Statik kalan süre saniye güncelle
-      );
       
-      // Debug: Güncellenen müşteri bilgilerini log'la
-      print('DEBUG: ${sibling.childName} güncellendi - Yeni toplam süre: $newTotalSeconds saniye, Yeni childCount: ${remainingSiblings.length}');
-
-      widget.customerRepository.updateCustomer(updatedCustomer);
-    }
-
-    // Çıkarılacak kardeşi sil
-    widget.customerRepository.deleteCustomer(siblingToRemove.id);
-
-    // Başarılı mesajı göster
-    final perChildMinutes = perChildSeconds ~/ 60;
-    final perChildRemainingSeconds = perChildSeconds % 60;
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          '${siblingToRemove.childName} çıkarıldı. Kalan ${remainingSiblings.length} çocuğun süresi: $perChildMinutes dk $perChildRemainingSeconds sn',
+    } catch (e) {
+      print('Kardeş çıkarma hatası: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Çıkarma işlemi sırasında hata oluştu: $e'),
+          backgroundColor: Colors.red.shade600,
+          behavior: SnackBarBehavior.floating,
         ),
-        backgroundColor: Colors.green.shade600,
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
+      );
+    }
   }
 
   // İptal Etme İşlemi
