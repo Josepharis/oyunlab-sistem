@@ -52,6 +52,12 @@ class _ProfileScreenState extends State<ProfileScreen>
   bool _isLoadingShifts = false;
   bool _isLoadingSales = false;
 
+  // Tarih filtreleri
+  DateTime _shiftStartDate = DateTime.now().subtract(const Duration(days: 30));
+  DateTime _shiftEndDate = DateTime.now();
+  DateTime _salesStartDate = DateTime.now().subtract(const Duration(days: 30));
+  DateTime _salesEndDate = DateTime.now();
+
   @override
   void initState() {
     super.initState();
@@ -89,18 +95,19 @@ class _ProfileScreenState extends State<ProfileScreen>
       final adminUser = adminAuthService.currentUser;
       
       if (adminUser != null) {
-        // Admin kullanıcı
+        // Admin kullanıcı - Firebase Auth UID'sini kullan (satış kayıtları için)
         setState(() {
           _currentUser = adminUser;
           _staffName = adminUser.name;
           _staffPosition = adminAuthService.userRoleString;
-          _staffId = adminUser.id;
+          _staffId = firebaseUser.uid; // DÜZELTME: Firebase Auth UID kullan
         });
 
         print('Admin kullanıcı bilgileri güncellendi:');
         print('Name: $_staffName');
         print('Position: $_staffPosition');
-        print('ID: $_staffId');
+        print('Admin ID: ${adminUser.id}');
+        print('Firebase UID (Staff ID): $_staffId');
       } else {
         // Normal kullanıcı - Firebase Auth'dan bilgileri al
         setState(() {
@@ -233,8 +240,22 @@ class _ProfileScreenState extends State<ProfileScreen>
     // Yeni stream'i başlat
     _salesStreamSubscription = _saleService.getUserSalesStream(_staffId, limit: 50).listen(
       (sales) {
+        print('📊 PROFİL SATIŞ STREAM GÜNCELLENDİ:');
+        print('   - Arama yapılan User ID: $_staffId');
+        print('   - Yeni satış sayısı: ${sales.length}');
+        
+        // Sadece son 3 satışı göster (çok log olmasın diye)
+        final recentSales = sales.take(3).toList();
+        for (var sale in recentSales) {
+          print('   - Son Satış: ${sale.customerName} - ${sale.amount}₺ - Durum: ${sale.status} - UserID: ${sale.userId}');
+        }
+        if (sales.length > 3) {
+          print('   - ... ve ${sales.length - 3} satış daha');
+        }
+        
         if (mounted) {
           setState(() {
+            // Tüm satışları göster (iptal edilenler dahil)
             _salesHistory = sales;
             _isLoadingSales = false;
           });
@@ -575,7 +596,69 @@ class _ProfileScreenState extends State<ProfileScreen>
     }
   }
 
-    // Toplam mesai süresini hesapla
+  // Mesai tarih aralığı seçici
+  Future<void> _selectShiftDateRange() async {
+    final DateTimeRange? picked = await showDateRangePicker(
+      context: context,
+      initialDateRange: DateTimeRange(start: _shiftStartDate, end: _shiftEndDate),
+      firstDate: DateTime(2021),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: ColorScheme.light(
+              primary: AppTheme.primaryColor,
+              onPrimary: Colors.white,
+              surface: Colors.white,
+              onSurface: Colors.black,
+            ),
+            dialogBackgroundColor: Colors.white,
+          ),
+          child: child!,
+        );
+      },
+    );
+
+    if (picked != null) {
+      setState(() {
+        _shiftStartDate = picked.start;
+        _shiftEndDate = picked.end;
+      });
+    }
+  }
+
+  // Satış tarih aralığı seçici
+  Future<void> _selectSalesDateRange() async {
+    final DateTimeRange? picked = await showDateRangePicker(
+      context: context,
+      initialDateRange: DateTimeRange(start: _salesStartDate, end: _salesEndDate),
+      firstDate: DateTime(2021),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: ColorScheme.light(
+              primary: AppTheme.primaryColor,
+              onPrimary: Colors.white,
+              surface: Colors.white,
+              onSurface: Colors.black,
+            ),
+            dialogBackgroundColor: Colors.white,
+          ),
+          child: child!,
+        );
+      },
+    );
+
+    if (picked != null) {
+      setState(() {
+        _salesStartDate = picked.start;
+        _salesEndDate = picked.end;
+      });
+    }
+  }
+
+  // Toplam mesai süresini hesapla
   Duration _calculateTotalShiftDuration() {
     int totalSeconds = 0;
     
@@ -597,9 +680,77 @@ class _ProfileScreenState extends State<ProfileScreen>
     return '${hours} sa ${minutes} dk ${seconds} sn';
   }
 
-  // Toplam satış tutarını hesapla
+  // Toplam satış tutarını hesapla (iptal edilen satışları çıkar)
   double _getTotalSales() {
-    return _salesHistory.fold(0.0, (sum, sale) => sum + sale.amount);
+    print('🔍 TOPLAM SATIŞ HESAPLAMA:');
+    print('   - Kullanıcı ID: $_staffId');
+    print('   - Toplam satış kaydı: ${_salesHistory.length}');
+    
+    double total = 0.0;
+    int normalSales = 0;
+    int cancelledSales = 0;
+    int negativeSales = 0;
+    
+    // Negatif tutarlı satışları önce bul ve logla
+    final negativeSalesList = _salesHistory.where((sale) => sale.amount < 0).toList();
+    if (negativeSalesList.isNotEmpty) {
+      print('   - NEGATİF TUTARLI SATIŞLAR BULUNDU:');
+      for (var sale in negativeSalesList) {
+        print('     → ${sale.customerName} - ${sale.amount}₺ - ${sale.description} - ${sale.date}');
+      }
+    }
+    
+    // Sadece son 5 satışı detaylı logla
+    final recentSales = _salesHistory.take(5).toList();
+    for (var sale in recentSales) {
+      print('   - Son Satış: ${sale.customerName} - ${sale.amount}₺ - Durum: ${sale.status}');
+      
+      // Negatif tutarlı satışları (eski refund kayıtları) atla
+      if (sale.amount < 0) {
+        print('     → Negatif tutar, atlandı: ${sale.amount}₺');
+        negativeSales++;
+        continue;
+      }
+      
+      if (sale.status == 'İptal Edildi') {
+        // İptal edilen satışları toplam satıştan çıkar
+        // DÜZELTME: İptal edilen satışlar zaten toplam satışa dahil edilmemeli
+        // Burada sadece iptal edilen satışları atla, çıkarma yapma
+        print('     → İptal edildi, atlandı: ${sale.amount}₺');
+        cancelledSales++;
+        continue;
+      } else {
+        // Normal satışları toplam satışa ekle
+        total += sale.amount;
+        normalSales++;
+        print('     → Normal satış, eklendi: +${sale.amount}₺ (Toplam: ${total}₺)');
+      }
+    }
+    
+    // Kalan satışları da hesapla ama loglamadan
+    for (int i = 5; i < _salesHistory.length; i++) {
+      final sale = _salesHistory[i];
+      
+      if (sale.amount < 0) {
+        negativeSales++;
+        continue;
+      }
+      
+      if (sale.status == 'İptal Edildi') {
+        cancelledSales++;
+        continue;
+      } else {
+        total += sale.amount;
+        normalSales++;
+      }
+    }
+    
+    print('   - ÖZET:');
+    print('     → Normal satışlar: $normalSales adet');
+    print('     → İptal edilen satışlar: $cancelledSales adet');
+    print('     → Negatif tutarlı satışlar: $negativeSales adet');
+    print('   - TOPLAM SONUÇ: ${total}₺');
+    return total;
   }
 
   @override
@@ -962,13 +1113,89 @@ class _ProfileScreenState extends State<ProfileScreen>
       );
     }
 
-    // Sadece bitmiş mesaileri göster
-    final completedShifts = _shiftHistory.where((shift) => shift.endTime != null).toList();
-    
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: completedShifts.length,
-      itemBuilder: (context, index) {
+    // Sadece bitmiş mesaileri göster ve tarih aralığına göre filtrele
+    final completedShifts = _shiftHistory.where((shift) {
+      if (shift.endTime == null) return false;
+      
+      // Tarih aralığına göre filtrele
+      final shiftDate = DateTime(
+        shift.startTime.year,
+        shift.startTime.month,
+        shift.startTime.day,
+      );
+      final startDate = DateTime(
+        _shiftStartDate.year,
+        _shiftStartDate.month,
+        _shiftStartDate.day,
+      );
+      final endDate = DateTime(
+        _shiftEndDate.year,
+        _shiftEndDate.month,
+        _shiftEndDate.day,
+      );
+      
+      return shiftDate.isAtSameMomentAs(startDate) || 
+             shiftDate.isAtSameMomentAs(endDate) ||
+             (shiftDate.isAfter(startDate) && shiftDate.isBefore(endDate));
+    }).toList();
+
+    return Column(
+      children: [
+        // Tarih seçici
+        Container(
+          margin: const EdgeInsets.all(16),
+          child: InkWell(
+            onTap: _selectShiftDateRange,
+            borderRadius: BorderRadius.circular(12),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: AppTheme.primaryColor.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppTheme.primaryColor.withOpacity(0.3)),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.date_range,
+                        size: 20,
+                        color: AppTheme.primaryColor,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Tarih Aralığı: ${DateFormat('d MMM yyyy', 'tr_TR').format(_shiftStartDate)} - ${DateFormat('d MMM yyyy', 'tr_TR').format(_shiftEndDate)}',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                          color: AppTheme.primaryColor,
+                        ),
+                      ),
+                    ],
+                  ),
+                  Icon(
+                    Icons.keyboard_arrow_down,
+                    color: AppTheme.primaryColor,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        
+        // Mesai listesi veya boş durum
+        Expanded(
+          child: completedShifts.isEmpty
+              ? _buildEmptyState(
+                  'Tarih Aralığında Mesai Bulunamadı',
+                  'Seçilen tarih aralığında mesai kaydı bulunmuyor.',
+                )
+              : ListView.builder(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  itemCount: completedShifts.length,
+                  itemBuilder: (context, index) {
         final shift = completedShifts[index];
 
         return Card(
@@ -1131,6 +1358,9 @@ class _ProfileScreenState extends State<ProfileScreen>
           ),
         );
       },
+                ),
+        ),
+      ],
     );
   }
 
@@ -1156,165 +1386,268 @@ class _ProfileScreenState extends State<ProfileScreen>
       );
     }
 
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: _salesHistory.length,
-      itemBuilder: (context, index) {
-        final sale = _salesHistory[index];
+    // Tarih aralığına göre satışları filtrele
+    final filteredSales = _salesHistory.where((sale) {
+      final saleDate = DateTime(
+        sale.date.year,
+        sale.date.month,
+        sale.date.day,
+      );
+      final startDate = DateTime(
+        _salesStartDate.year,
+        _salesStartDate.month,
+        _salesStartDate.day,
+      );
+      final endDate = DateTime(
+        _salesEndDate.year,
+        _salesEndDate.month,
+        _salesEndDate.day,
+      );
+      
+      return saleDate.isAtSameMomentAs(startDate) || 
+             saleDate.isAtSameMomentAs(endDate) ||
+             (saleDate.isAfter(startDate) && saleDate.isBefore(endDate));
+    }).toList();
 
-        return Card(
-          margin: const EdgeInsets.only(bottom: 12),
-          elevation: 0,
-          shape: RoundedRectangleBorder(
+    return Column(
+      children: [
+        // Tarih seçici
+        Container(
+          margin: const EdgeInsets.all(16),
+          child: InkWell(
+            onTap: _selectSalesDateRange,
             borderRadius: BorderRadius.circular(12),
-            side: BorderSide(color: Colors.grey.shade200),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Satış tipine göre ikon
-                Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: _getSaleTypeColor(sale).withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Center(
-                    child: Icon(
-                      _getSaleTypeIcon(sale),
-                      color: _getSaleTypeColor(sale),
-                      size: 20,
-                    ),
-                  ),
-                ),
-
-                const SizedBox(width: 12),
-
-                // Satış detayları
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: AppTheme.primaryColor.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppTheme.primaryColor.withOpacity(0.3)),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(
                     children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            sale.customerName,
-                            style: const TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          Text(
-                            '${sale.amount.toStringAsFixed(2)} ₺',
-                            style: TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.green.shade700,
-                            ),
-                          ),
-                        ],
+                      Icon(
+                        Icons.date_range,
+                        size: 20,
+                        color: AppTheme.primaryColor,
                       ),
-                      const SizedBox(height: 4),
+                      const SizedBox(width: 8),
                       Text(
-                        sale.description,
+                        'Tarih Aralığı: ${DateFormat('d MMM yyyy', 'tr_TR').format(_salesStartDate)} - ${DateFormat('d MMM yyyy', 'tr_TR').format(_salesEndDate)}',
                         style: TextStyle(
-                          fontSize: 13,
-                          color: Colors.grey.shade600,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      // Ödeme yöntemi
-                      if (sale.paymentMethod != null)
-                        Row(
-                          children: [
-                            Icon(
-                              _getPaymentMethodIcon(sale.paymentMethod!),
-                              size: 14,
-                              color: Colors.grey.shade600,
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              _getPaymentMethodText(sale.paymentMethod!),
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.grey.shade600,
-                              ),
-                            ),
-                          ],
-                        ),
-                      const SizedBox(height: 4),
-                      Text(
-                        DateFormat(
-                          'd MMM yyyy, HH:mm',
-                          'tr_TR',
-                        ).format(sale.date),
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey.shade500,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                          color: AppTheme.primaryColor,
                         ),
                       ),
                     ],
                   ),
-                ),
-
-                // İşlem menüsü
-                PopupMenuButton<String>(
-                  icon: Icon(
-                    Icons.more_vert,
-                    color: Colors.grey.shade600,
-                    size: 20,
+                  Icon(
+                    Icons.keyboard_arrow_down,
+                    color: AppTheme.primaryColor,
                   ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  onSelected: (value) {
-                    if (value == 'edit') {
-                      _showEditSaleDialog(sale);
-                    } else if (value == 'delete') {
-                      _showDeleteSaleDialog(sale);
-                    }
-                  },
-                  itemBuilder:
-                      (BuildContext context) => [
-                        PopupMenuItem<String>(
-                          value: 'edit',
-                          child: Row(
-                            children: [
-                              Icon(
-                                Icons.edit,
-                                color: Colors.blue.shade600,
-                                size: 18,
-                              ),
-                              const SizedBox(width: 8),
-                              const Text('Düzenle'),
-                            ],
-                          ),
-                        ),
-                        PopupMenuItem<String>(
-                          value: 'delete',
-                          child: Row(
-                            children: [
-                              Icon(
-                                Icons.delete,
-                                color: Colors.red.shade600,
-                                size: 18,
-                              ),
-                              const SizedBox(width: 8),
-                              const Text('Sil'),
-                            ],
-                          ),
-                        ),
-                      ],
-                ),
-              ],
+                ],
+              ),
             ),
           ),
-        );
-      },
+        ),
+        
+        // Satış listesi veya boş durum
+        Expanded(
+          child: filteredSales.isEmpty
+              ? _buildEmptyState(
+                  'Tarih Aralığında Satış Bulunamadı',
+                  'Seçilen tarih aralığında satış kaydı bulunmuyor.',
+                )
+              : ListView.builder(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  itemCount: filteredSales.length,
+                  itemBuilder: (context, index) {
+              final sale = filteredSales[index];
+
+              return Card(
+                margin: const EdgeInsets.only(bottom: 12),
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  side: BorderSide(color: Colors.grey.shade200),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Satış tipine göre ikon
+                      Container(
+                        width: 40,
+                        height: 40,
+                        decoration: BoxDecoration(
+                          color: _getSaleTypeColor(sale).withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Center(
+                          child: Icon(
+                            _getSaleTypeIcon(sale),
+                            color: _getSaleTypeColor(sale),
+                            size: 20,
+                          ),
+                        ),
+                      ),
+
+                      const SizedBox(width: 12),
+
+                      // Satış detayları
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  sale.customerName,
+                                  style: const TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                Text(
+                                  '${sale.amount.toStringAsFixed(2)} ₺',
+                                  style: TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.bold,
+                                    color: sale.status == 'İptal Edildi' ? Colors.orange.shade700 : Colors.green.shade700,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 4),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    sale.description,
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      color: Colors.grey.shade600,
+                                    ),
+                                  ),
+                                ),
+                                // İptal edilen satışlar için etiket
+                                if (sale.status == 'İptal Edildi')
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: Colors.orange.shade100,
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(color: Colors.orange.shade300, width: 1),
+                                    ),
+                                    child: Text(
+                                      'İPTAL',
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.orange.shade700,
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                            const SizedBox(height: 4),
+                            // Ödeme yöntemi
+                            if (sale.paymentMethod != null)
+                              Row(
+                                children: [
+                                  Icon(
+                                    _getPaymentMethodIcon(sale.paymentMethod!),
+                                    size: 14,
+                                    color: Colors.grey.shade600,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    _getPaymentMethodText(sale.paymentMethod!),
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.grey.shade600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            const SizedBox(height: 4),
+                            Text(
+                              DateFormat(
+                                'd MMM yyyy, HH:mm',
+                                'tr_TR',
+                              ).format(sale.date),
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey.shade500,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      // İşlem menüsü
+                      PopupMenuButton<String>(
+                        icon: Icon(
+                          Icons.more_vert,
+                          color: Colors.grey.shade600,
+                          size: 20,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        onSelected: (value) {
+                          if (value == 'edit') {
+                            _showEditSaleDialog(sale);
+                          } else if (value == 'delete') {
+                            _showDeleteSaleDialog(sale);
+                          }
+                        },
+                        itemBuilder:
+                            (BuildContext context) => [
+                              PopupMenuItem<String>(
+                                value: 'edit',
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      Icons.edit,
+                                      color: Colors.blue.shade600,
+                                      size: 18,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    const Text('Düzenle'),
+                                  ],
+                                ),
+                              ),
+                              PopupMenuItem<String>(
+                                value: 'delete',
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      Icons.delete,
+                                      color: Colors.red.shade600,
+                                      size: 18,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    const Text('Sil'),
+                                  ],
+                                ),
+                              ),
+                            ],
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+                ),
+        ),
+      ],
     );
   }
 
@@ -2920,14 +3253,14 @@ class _ProfileScreenState extends State<ProfileScreen>
                             Icon(
                               Icons.monetization_on,
                               size: 16,
-                              color: Colors.green.shade600,
+                              color: sale.status == 'İptal Edildi' ? Colors.orange.shade600 : Colors.green.shade600,
                             ),
                             const SizedBox(width: 8),
                             Text(
                               '${sale.amount.toStringAsFixed(2)} ₺',
                               style: TextStyle(
                                 fontWeight: FontWeight.bold,
-                                color: Colors.green.shade700,
+                                color: sale.status == 'İptal Edildi' ? Colors.orange.shade700 : Colors.green.shade700,
                               ),
                             ),
                           ],

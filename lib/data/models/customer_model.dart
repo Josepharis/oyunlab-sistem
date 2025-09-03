@@ -116,7 +116,17 @@ class Customer {
     // Kalan süre = Toplam süre - (Geçen süre - Duraklatılan süre) * Çocuk sayısı
     final now = DateTime.now();
     final totalElapsed = now.difference(entryTime).inSeconds;
-    final actualElapsed = totalElapsed - pausedSeconds;
+    
+    // Duraklatılan süreyi hesapla
+    int totalPausedSeconds = pausedSeconds;
+    
+    // Eğer şu anda duraklatılmışsa, aktif duraklatma süresini de ekle
+    if (isPaused && pauseStartTime != null) {
+      final activePauseDuration = now.difference(pauseStartTime!).inSeconds;
+      totalPausedSeconds += activePauseDuration;
+    }
+    
+    final actualElapsed = totalElapsed - totalPausedSeconds;
     final remaining = totalSeconds - (actualElapsed * childCount);
     return remaining > 0 ? remaining : 0;
   }

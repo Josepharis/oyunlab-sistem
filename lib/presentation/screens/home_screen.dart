@@ -2319,11 +2319,32 @@ class _HomeScreenState extends State<HomeScreen>
               onPressed: () async {
                 // Tüm kardeşleri iptal edildi olarak işaretle
                 for (var sibling in allSiblings) {
+                  // Eğer ücret alınmışsa mevcut satış kaydını iptal olarak güncelle
+                  if (sibling.price > 0) {
+                    await _updateSaleRecordAsCancelled(sibling);
+                  }
+
+                  // İptal edilen müşterinin kalan süresinden purchasedSeconds'i düş
+                  await _handleCancelledCustomerTime(sibling);
+
+                  // Yeni kullanıcı için kalan süreyi 0 yap
+                  final samePhoneCustomers = widget.customerRepository.customers
+                      .where((c) => c.phoneNumber == sibling.phoneNumber && c.id != sibling.id)
+                      .toList();
+                  
+                  final isNewUser = samePhoneCustomers.isEmpty;
+                  final remainingMinutes = isNewUser ? 0 : sibling.remainingMinutes;
+                  final remainingSeconds = isNewUser ? 0 : sibling.remainingSeconds;
+
                   // İptal durumunu özel bir alan olarak ekleyelim - price alanını kullanarak
                   // price = -1 olan kayıtları iptal edilmiş olarak yorumlayabiliriz
                   final updatedCustomer = sibling.copyWith(
                     isPaused: false, // duraklatma durumunu kaldır
                     price: -1, // iptal işareti olarak negatif değer
+                    remainingMinutes: remainingMinutes, // Yeni kullanıcı için 0, diğerleri için mevcut
+                    remainingSeconds: remainingSeconds, // Yeni kullanıcı için 0, diğerleri için mevcut
+                    isCompleted: true, // İptal edilen müşteri tamamlanmış olarak işaretle
+                    completedTime: DateTime.now(), // Tamamlanma zamanı
                   );
 
                   // Güncellenmiş müşteriyi kaydet
@@ -2679,6 +2700,124 @@ class _HomeScreenState extends State<HomeScreen>
       print('Satış güncellemesi bildirilirken hata: $e');
     }
   }
+
+  // Mevcut satış kaydını iptal olarak güncelle
+  Future<void> _updateSaleRecordAsCancelled(Customer customer) async {
+    try {
+      final firebaseUser = FirebaseAuth.instance.currentUser;
+      if (firebaseUser == null) {
+        print('❌ Firebase kullanıcısı bulunamadı');
+        return;
+      }
+      
+      print('🔄 Satış kaydı aranıyor: ${customer.childName}');
+      
+      // Müşteri adına göre satış kaydını bul
+      final sales = await _saleService.getUserSales(firebaseUser.uid);
+      print('📊 Toplam satış kaydı: ${sales.length}');
+      
+      // Müşteri adı ve telefon numarasına göre satış kaydını bul
+      final matchingSales = sales.where(
+        (sale) => sale.customerName == customer.childName && 
+                  sale.customerPhone == customer.phoneNumber &&
+                  sale.amount > 0 && 
+                  sale.status != 'İptal Edildi',
+      ).toList();
+      
+      if (matchingSales.isEmpty) {
+        print('❌ Eşleşen satış kaydı bulunamadı: ${customer.childName}');
+        return;
+      }
+      
+      // En son satış kaydını al (en yeni tarihli)
+      final matchingSale = matchingSales.reduce((a, b) => 
+        a.date.isAfter(b.date) ? a : b
+      );
+      
+      print('✅ Satış kaydı bulundu: ${matchingSale.id} - ${matchingSale.amount}₺');
+      
+      // Satış kaydını iptal olarak güncelle - amount'u koruyarak orijinal tutarı göster
+      final updatedSale = matchingSale.copyWith(
+        status: 'İptal Edildi',
+        updatedAt: DateTime.now(),
+      );
+      
+      final result = await _saleService.updateSale(updatedSale);
+      if (result != null) {
+        print('✅ Satış kaydı iptal olarak güncellendi: ${customer.childName}');
+        print('   - Bilet numarası: ${customer.ticketNumber}');
+        print('   - Güncellenmiş satış ID: ${result.id}');
+        print('   - Güncellenmiş durum: ${result.status}');
+        print('   - Güncellenmiş tutar: ${result.amount}₺');
+      } else {
+        print('❌ Satış kaydı güncellenemedi: ${customer.childName}');
+      }
+    } catch (e) {
+      print('❌ Satış kaydı güncellenirken hata: $e');
+    }
+  }
+
+  // İptal edilen müşterinin kalan süresinden purchasedSeconds'i düş
+  Future<void> _handleCancelledCustomerTime(Customer customer) async {
+    try {
+      // Eğer bu girişte süre satın alınmışsa (purchasedSeconds > 0)
+      if (customer.purchasedSeconds > 0) {
+        print('İptal edilen müşteri için kalan süre düzenleniyor: ${customer.childName}');
+        print('Satın alınan süre: ${customer.purchasedSeconds} saniye');
+        
+        // Aynı telefon numarasına sahip diğer müşterileri bul
+        final samePhoneCustomers = widget.customerRepository.customers
+            .where((c) => c.phoneNumber == customer.phoneNumber && c.id != customer.id)
+            .toList();
+        
+        if (samePhoneCustomers.isNotEmpty) {
+          // En son giriş yapan müşteriyi bul (en büyük ticketNumber)
+          final latestCustomer = samePhoneCustomers
+              .reduce((a, b) => a.ticketNumber > b.ticketNumber ? a : b);
+          
+          print('En son giriş yapan müşteri bulundu: ${latestCustomer.childName} (Bilet #${latestCustomer.ticketNumber})');
+          
+          // Kalan süreden purchasedSeconds'i düş
+          final currentRemainingSeconds = latestCustomer.currentRemainingSeconds;
+          final newRemainingSeconds = currentRemainingSeconds - customer.purchasedSeconds;
+          
+          // Negatif olmaması için kontrol et
+          final finalRemainingSeconds = newRemainingSeconds > 0 ? newRemainingSeconds : 0;
+          
+          print('Eski kalan süre: ${currentRemainingSeconds} saniye');
+          print('Yeni kalan süre: ${finalRemainingSeconds} saniye');
+          
+          // Müşteriyi güncelle
+          final updatedCustomer = latestCustomer.copyWith(
+            remainingMinutes: finalRemainingSeconds ~/ 60,
+            remainingSeconds: finalRemainingSeconds % 60,
+          );
+          
+          await widget.customerRepository.updateCustomer(updatedCustomer);
+          print('✅ Kalan süre güncellendi: ${finalRemainingSeconds} saniye');
+        } else {
+          // Yeni kullanıcı için aynı telefon numarasına sahip başka müşteri yok
+          // Bu durumda iptal edilen müşterinin kendisinin kalan süresini 0 yap
+          print('Yeni kullanıcı - iptal edilen müşterinin kalan süresi 0 yapılacak');
+          
+          // İptal edilen müşterinin kalan süresini 0 yap
+          final updatedCustomer = customer.copyWith(
+            remainingMinutes: 0,
+            remainingSeconds: 0,
+          );
+          
+          await widget.customerRepository.updateCustomer(updatedCustomer);
+          print('✅ İptal edilen müşterinin kalan süresi 0 yapıldı');
+        }
+      } else {
+        print('Bu girişte süre satın alınmamış, kalan süre düzenlenmeyecek');
+      }
+    } catch (e) {
+      print('İptal edilen müşteri süre düzenlenirken hata: $e');
+    }
+  }
+
+
 
   // Süre satın alma satış kaydı oluştur
   Future<void> _createTimePurchaseSaleRecord(Customer customer, int additionalMinutes, int siblingCount, double pricePerMinute) async {

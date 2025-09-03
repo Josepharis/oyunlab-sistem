@@ -1131,6 +1131,10 @@ class _SalesScreenState extends State<SalesScreen> {
 
   String _getCustomerStatus(Customer customer, Duration remainingTime) {
     if (customer.isCompleted) {
+      // İptal edilen müşterileri kontrol et (price = -1)
+      if (customer.price < 0) {
+        return 'İptal Edildi';
+      }
       return 'Tamamlandı';
     } else {
       // Sales screen için sadece tamamlanma durumunu kontrol et
@@ -1140,6 +1144,10 @@ class _SalesScreenState extends State<SalesScreen> {
 
   Color _getCustomerStatusColor(Customer customer, Duration remainingTime) {
     if (customer.isCompleted) {
+      // İptal edilen müşterileri kontrol et (price = -1)
+      if (customer.price < 0) {
+        return Colors.orange.shade700;
+      }
       return Colors.green.shade700;
     } else {
       // Sales screen için sadece tamamlanma durumunu kontrol et
@@ -1149,6 +1157,10 @@ class _SalesScreenState extends State<SalesScreen> {
 
   Color _getCustomerStatusContainerColor(Customer customer, Duration remainingTime) {
     if (customer.isCompleted) {
+      // İptal edilen müşterileri kontrol et (price = -1)
+      if (customer.price < 0) {
+        return Colors.orange.shade50;
+      }
       return Colors.green.shade50;
     } else if (remainingTime.inSeconds <= 0) {
       return Colors.red.shade50;
@@ -1159,6 +1171,10 @@ class _SalesScreenState extends State<SalesScreen> {
 
   Color _getCustomerStatusBorderColor(Customer customer, Duration remainingTime) {
     if (customer.isCompleted) {
+      // İptal edilen müşterileri kontrol et (price = -1)
+      if (customer.price < 0) {
+        return Colors.orange.shade200;
+      }
       return Colors.green.shade200;
     } else if (remainingTime.inSeconds <= 0) {
       return Colors.red.shade200;

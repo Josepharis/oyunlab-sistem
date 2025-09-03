@@ -1341,6 +1341,8 @@ class _NewCustomerFormState extends State<NewCustomerForm>
         print('   - Tutar: ${entryFee}₺');
         print('   - Süre: ${customer.totalSeconds ~/ 60} dakika');
         print('   - Satış ID: ${result.id}');
+        print('   - User ID: ${firebaseUser.uid}');
+        print('   - User Name: ${firebaseUser.displayName ?? firebaseUser.email?.split('@')[0] ?? 'Kullanıcı'}');
         
         // Real-time stream otomatik güncelleniyor
       } else {

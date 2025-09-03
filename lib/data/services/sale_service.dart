@@ -92,6 +92,36 @@ class SaleService {
     }
   }
 
+  // Kullanıcının tüm satışlarını sil
+  Future<bool> deleteAllUserSales(String userId) async {
+    try {
+      // Kullanıcının tüm satışlarını getir
+      final querySnapshot = await _firestore
+          .collection(_collection)
+          .where('userId', isEqualTo: userId)
+          .get();
+
+      if (querySnapshot.docs.isEmpty) {
+        print('Silinecek satış kaydı bulunamadı');
+        return true;
+      }
+
+      // Batch delete işlemi
+      final batch = _firestore.batch();
+      
+      for (var doc in querySnapshot.docs) {
+        batch.delete(doc.reference);
+      }
+
+      await batch.commit();
+      print('${querySnapshot.docs.length} satış kaydı başarıyla silindi');
+      return true;
+    } catch (e) {
+      print('Tüm satışlar silinirken hata: $e');
+      return false;
+    }
+  }
+
   // Tüm satışları getir (admin için)
   Future<List<SaleRecord>> getAllSales({
     int limit = 100,
