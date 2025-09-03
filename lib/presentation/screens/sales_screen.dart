@@ -216,8 +216,9 @@ class _SalesScreenState extends State<SalesScreen> {
       case 'kalan_süre':
         customers.sort(
           (a, b) {
-            final aRemaining = a.totalSeconds - a.staticRemainingSeconds;
-            final bRemaining = b.totalSeconds - b.staticRemainingSeconds;
+            // Sales screen için sadece toplam süreyi kullan
+            final aRemaining = a.totalSeconds;
+            final bRemaining = b.totalSeconds;
             return _sortAscending
                 ? aRemaining.compareTo(bRemaining)
                 : bRemaining.compareTo(aRemaining);
@@ -278,8 +279,8 @@ class _SalesScreenState extends State<SalesScreen> {
     int activeCount = 0;
     
     for (var customer in customers) {
-      final remainingSeconds = customer.totalSeconds - customer.staticRemainingSeconds;
-      if (!customer.isCompleted && remainingSeconds > 0) {
+      // Sales screen için sadece toplam süreyi kontrol et
+      if (!customer.isCompleted && customer.totalSeconds > 0) {
         activeCount += customer.childCount;
       }
     }
@@ -566,7 +567,7 @@ class _SalesScreenState extends State<SalesScreen> {
                           ),
                           DropdownMenuItem(
                             value: 'kalan_süre',
-                            child: Text('Kalan Süre'),
+                            child: Text('Satın Alınan Süre'),
                           ),
                         ],
                       ),
@@ -588,12 +589,12 @@ class _SalesScreenState extends State<SalesScreen> {
                         itemBuilder: (context, index) {
                           final customer = sortedCustomers[index];
 
-                          // Her müşteri için, toplam süre
+                          // Her müşteri için, toplam süre (satın alınan süre)
                           final totalTime = Duration(seconds: customer.totalSeconds);
                           
-                          // STATİK SÜRE SİSTEMİ: Kalan ve kullanılan süre statik
-                          final totalRemainingSeconds = customer.staticRemainingSeconds;
-                          final totalUsedSeconds = customer.staticUsedSeconds;
+                          // SALES SCREEN SİSTEMİ: Kullanılan süre sadece karta yazarken gösterilir
+                          final totalRemainingSeconds = customer.currentRemainingSeconds; // DOĞRU KALAN SÜRE
+                          final totalUsedSeconds = customer.staticUsedSeconds; // Kullanılan süre hesapla
                           
                           final remainingTime = Duration(seconds: totalRemainingSeconds);
                           final usedDuration = Duration(seconds: totalUsedSeconds);
@@ -765,8 +766,8 @@ class _SalesScreenState extends State<SalesScreen> {
                                                 children: [
                                                   Expanded(
                                                     child: _buildTimeInfo(
-                                                      icon: Icons.timer,
-                                                      iconColor: Colors.purple.shade600,
+                                                      icon: Icons.shopping_cart,
+                                                      iconColor: Colors.red.shade600,
                                                       title: 'Kullanılan',
                                                       time: null,
                                                       duration: usedDuration,
@@ -781,7 +782,7 @@ class _SalesScreenState extends State<SalesScreen> {
                                                   Expanded(
                                                     child: _buildTimeInfo(
                                                       icon: Icons.schedule,
-                                                      iconColor: Colors.orange.shade600,
+                                                      iconColor: Colors.green.shade600,
                                                       title: 'Kalan',
                                                       time: null,
                                                       duration: remainingTime,
@@ -851,11 +852,11 @@ class _SalesScreenState extends State<SalesScreen> {
                                                 color: Colors.grey.shade300,
                                               ),
 
-                                              // Kullanılan süre
+                                              // Kullanılan süre (sales screen için)
                                               Expanded(
                                                 child: _buildTimeInfo(
-                                                  icon: Icons.timer,
-                                                  iconColor: Colors.purple.shade600,
+                                                  icon: Icons.shopping_cart,
+                                                  iconColor: Colors.red.shade600,
                                                   title: 'Kullanılan',
                                                   time: null,
                                                   duration: usedDuration,
@@ -870,14 +871,14 @@ class _SalesScreenState extends State<SalesScreen> {
                                                 color: Colors.grey.shade300,
                                               ),
                                               
-                                              // Kalan süre
+                                              // Kalan süre (sales screen için)
                                               Expanded(
                                                 child: _buildTimeInfo(
                                                   icon: Icons.schedule,
-                                                  iconColor: Colors.orange.shade600,
+                                                  iconColor: Colors.green.shade600,
                                                   title: 'Kalan',
                                                   time: null,
-                                                                                                        duration: remainingTime,
+                                                  duration: remainingTime,
                                                   isSmall: false,
                                                 ),
                                               ),
@@ -907,7 +908,7 @@ class _SalesScreenState extends State<SalesScreen> {
                                         ),
                                         const SizedBox(width: 8),
                                         Text(
-                                          'Satın Alınan Süre: ${customer.price > 0 ? _formatDuration(totalTime) : 'Yok'}',
+                                          'Satın Alınan Süre: ${_formatDuration(totalTime)}',
                                           style: TextStyle(
                                             fontSize: 13,
                                             fontWeight: FontWeight.w600,
@@ -917,6 +918,8 @@ class _SalesScreenState extends State<SalesScreen> {
                                       ],
                                     ),
                                   ),
+                                  
+
                                 ],
                               ),
                             ),
@@ -1127,9 +1130,8 @@ class _SalesScreenState extends State<SalesScreen> {
   String _getCustomerStatus(Customer customer, Duration remainingTime) {
     if (customer.isCompleted) {
       return 'Tamamlandı';
-    } else if (remainingTime.inSeconds <= 0) {
-      return 'Süre Bitti';
     } else {
+      // Sales screen için sadece tamamlanma durumunu kontrol et
       return 'Aktif';
     }
   }
@@ -1137,9 +1139,8 @@ class _SalesScreenState extends State<SalesScreen> {
   Color _getCustomerStatusColor(Customer customer, Duration remainingTime) {
     if (customer.isCompleted) {
       return Colors.green.shade700;
-    } else if (remainingTime.inSeconds <= 0) {
-      return Colors.red.shade700;
     } else {
+      // Sales screen için sadece tamamlanma durumunu kontrol et
       return Colors.blue.shade700;
     }
   }

@@ -264,7 +264,7 @@ class CustomerRepository {
     }
   }
 
-  /// Müşteri işleminin tamamlandığını işaretler
+  /// Müşteri işleminin tamamlandığını işaretler - YENİ SİSTEM
   Future<void> completeCustomer(String id) async {
     try {
       // Çevrimdışı modda işlemi atla
@@ -278,30 +278,31 @@ class CustomerRepository {
       // Önce müşterinin önbellekte olup olmadığını kontrol et
       final customerIndex = _cachedCustomers.indexWhere((c) => c.id == id);
       if (customerIndex >= 0) {
-        print('CUSTOMER_REPO: Müşteri önbellekte bulundu, cache güncelleniyor');
+        print('CUSTOMER_REPO: Müşteri önbellekte bulundu, kalan süre kaydediliyor');
 
-        // Önbellekteki müşteriyi inactive olarak işaretle
-        // final customer = _cachedCustomers[customerIndex];
-        // final updatedCustomer = customer.copyWith(
-        //   isPaused: false,
-        //   pauseStartTime: null,
-        // );
-
-        // Önbelleği güncelle - aktif müşteriler arasından çıkar
+        // YENİ SİSTEM: Kalan süreyi kaydet ve tamamla
+        final customer = _cachedCustomers[customerIndex];
+        final completedCustomer = customer.completeWithRemainingTime();
+        
+        // Önbelleği güncelle - tamamlanan müşteriyi kaldır
         _cachedCustomers.removeAt(customerIndex);
         _customerStreamController.add(_cachedCustomers);
 
         print(
-          'CUSTOMER_REPO: Müşteri önbellekten kaldırıldı, veritabanı güncelleniyor',
+          'CUSTOMER_REPO: Müşteri kalan süre ile tamamlandı, veritabanı güncelleniyor',
         );
+        
+        // Veritabanında güncelle - tamamlanan müşteri bilgileri ile
+        await _firebaseService.updateCustomer(id, completedCustomer.toJson());
       } else {
         print(
           'CUSTOMER_REPO: Müşteri önbellekte bulunamadı, sadece veritabanı güncelleniyor',
         );
+        
+        // Veritabanında güncelle
+        await _firebaseService.completeCustomer(id);
       }
 
-      // Veritabanında güncelle
-      await _firebaseService.completeCustomer(id);
       print('CUSTOMER_REPO: Müşteri başarıyla tamamlandı, ID: $id');
     } catch (e) {
       print('CUSTOMER_REPO: Müşteri tamamlanırken hata: $e');

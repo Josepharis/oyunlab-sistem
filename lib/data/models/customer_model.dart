@@ -47,8 +47,8 @@ class Customer {
 
   // KALAN SÜRE HESAPLAMA - YENİ SİSTEM
   int get calculatedRemainingSeconds {
-    // Tamamlanan müşteriler için de kalan süreyi hesapla (sales screen için)
-    return totalSeconds - currentUsedSeconds - pausedSeconds;
+    // YENİ SİSTEM: currentRemainingSeconds ile aynı mantık
+    return currentRemainingSeconds;
   }
 
   // SABİT KALAN SÜRE (SALES SCREEN İÇİN - DİNAMİK DEĞİL)
@@ -75,14 +75,13 @@ class Customer {
     return calculatedRemainingSeconds ~/ childCount;
   }
 
-  // GERÇEK ZAMANLI KULLANILAN SÜRE (ANA SAYFA İÇİN)
+  // GERÇEK ZAMANLI KULLANILAN SÜRE (ANA SAYFA İÇİN) - YENİ SİSTEM
   int get currentUsedSeconds {
     if (isCompleted) return usedSeconds;
     
-    // YENİ SİSTEM: Kalan süreyi hesapla, sonra toplam süreden çıkar
-    final now = DateTime.now();
-    final totalElapsed = now.difference(entryTime).inSeconds;
-    final actualRemainingSeconds = totalSeconds - (totalElapsed - pausedSeconds) * childCount;
+    // YENİ SİSTEM: Sadece kalan süre üzerinden hesapla
+    // Kullanılan süre = Toplam süre - Kalan süre
+    final actualRemainingSeconds = currentRemainingSeconds;
     final calculatedUsedSeconds = totalSeconds - actualRemainingSeconds;
     return calculatedUsedSeconds > 0 ? calculatedUsedSeconds : 0;
   }
@@ -93,15 +92,26 @@ class Customer {
       // Tamamlanan müşteriler için kaydedilen kullanılan süre
       return usedSeconds;
     } else {
-      // Aktif müşteriler için: toplam süre - statik kalan süre
-      return totalSeconds - staticRemainingSeconds;
+      // YENİ SİSTEM: Aktif müşteriler için kullanılan süre hesaplama
+      // Kullanılan süre = Toplam süre - Kalan süre
+      final actualRemainingSeconds = currentRemainingSeconds;
+      return totalSeconds - actualRemainingSeconds;
     }
   }
 
-  // GERÇEK ZAMANLI KALAN SÜRE (ANA SAYFA İÇİN)
+  // GERÇEK ZAMANLI KALAN SÜRE (ANA SAYFA İÇİN) - YENİ SİSTEM
   int get currentRemainingSeconds {
-    // Toplam süre - gerçek zamanlı kullanılan süre - duraklatılan süre
-    final remaining = totalSeconds - currentUsedSeconds - pausedSeconds;
+    if (isCompleted) {
+      // Tamamlanan müşteriler için kaydedilen kalan süre
+      return (remainingMinutes * 60) + remainingSeconds;
+    }
+    
+    // YENİ SİSTEM: Kalan süre hesaplama
+    // Kalan süre = Toplam süre - (Geçen süre - Duraklatılan süre) * Çocuk sayısı
+    final now = DateTime.now();
+    final totalElapsed = now.difference(entryTime).inSeconds;
+    final actualElapsed = totalElapsed - pausedSeconds;
+    final remaining = totalSeconds - (actualElapsed * childCount);
     return remaining > 0 ? remaining : 0;
   }
 
@@ -130,6 +140,20 @@ class Customer {
   int get durationMinutes => totalSeconds ~/ 60;
   int get originalDurationMinutes => totalSeconds ~/ 60;
   bool get isActive => !isCompleted && currentRemainingSeconds > 0;
+
+  // TESLİM/SURE BİTİMİNDE KALAN SÜRE KAYDETME
+  Customer completeWithRemainingTime() {
+    final actualRemainingSeconds = currentRemainingSeconds;
+    final actualUsedSeconds = totalSeconds - actualRemainingSeconds;
+    
+    return copyWith(
+      isCompleted: true,
+      completedTime: DateTime.now(),
+      remainingMinutes: actualRemainingSeconds ~/ 60,
+      remainingSeconds: actualRemainingSeconds % 60,
+      usedSeconds: actualUsedSeconds,
+    );
+  }
 
   factory Customer.fromJson(Map<String, dynamic> json) {
     try {

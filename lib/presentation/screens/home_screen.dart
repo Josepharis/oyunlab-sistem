@@ -137,8 +137,8 @@ class _HomeScreenState extends State<HomeScreen>
     
     // Masası olmayan aktif çocukları bul
     final customersWithoutTable = customers.where((customer) {
-      // Aktif olan çocuklar
-      if (customer.remainingTime.inSeconds <= 0 || customer.ticketNumber <= 0) {
+      // Aktif olan çocuklar - YENİ SİSTEM: currentRemainingSeconds kullan
+      if (customer.currentRemainingSeconds <= 0 || customer.ticketNumber <= 0) {
         return false;
       }
       
@@ -1593,7 +1593,7 @@ class _HomeScreenState extends State<HomeScreen>
     int totalRemainingSeconds = 0;
     Map<String, int> siblingRemainingSeconds = {};
     for (final child in currentSiblings) {
-      final childSeconds = child.remainingTime.inSeconds;
+      final childSeconds = child.currentRemainingSeconds;
       totalRemainingSeconds += childSeconds;
       siblingRemainingSeconds[child.id] = childSeconds;
       print('${child.childName}: $childSeconds saniye (${childSeconds ~/ 60}:${(childSeconds % 60).toString().padLeft(2, '0')})');
@@ -1900,7 +1900,7 @@ class _HomeScreenState extends State<HomeScreen>
     int totalRemainingSeconds = 0;
     Map<String, int> siblingRemainingSeconds = {};
     for (final sibling in siblings) {
-      final siblingSeconds = sibling.remainingTime.inSeconds;
+      final siblingSeconds = sibling.currentRemainingSeconds;
       totalRemainingSeconds += siblingSeconds;
       siblingRemainingSeconds[sibling.id] = siblingSeconds;
       print('${sibling.childName}: $siblingSeconds saniye (${siblingSeconds ~/ 60}:${(siblingSeconds % 60).toString().padLeft(2, '0')})');
@@ -1935,7 +1935,7 @@ class _HomeScreenState extends State<HomeScreen>
                     child: SingleChildScrollView(
                       child: Column(
                         children: siblings.map((sibling) {
-                          final remainingMinutes = sibling.remainingTime.inMinutes;
+                          final remainingMinutes = sibling.currentRemainingSeconds ~/ 60;
                           return ListTile(
                             title: Text(sibling.childName),
                             subtitle: Text('Kalan süre: $remainingMinutes dakika'),
@@ -1946,7 +1946,7 @@ class _HomeScreenState extends State<HomeScreen>
                                 
                                 // Kalan süreyi diğer kardeşler arasında paylaştır
                                 if (updatedSiblings.isNotEmpty) {
-                                  final totalRemainingSeconds = sibling.remainingTime.inSeconds;
+                                  final totalRemainingSeconds = sibling.currentRemainingSeconds;
                                   final perChildSeconds = totalRemainingSeconds ~/ updatedSiblings.length;
                                   
                                   for (var remainingSibling in updatedSiblings) {
