@@ -589,8 +589,8 @@ class _SalesScreenState extends State<SalesScreen> {
                         itemBuilder: (context, index) {
                           final customer = sortedCustomers[index];
 
-                          // Her müşteri için, toplam süre (satın alınan süre)
-                          final totalTime = Duration(seconds: customer.totalSeconds);
+                          // Her müşteri için, bu girişte satın alınan süre
+                          final purchasedTime = Duration(seconds: customer.purchasedSeconds);
                           
                           // SALES SCREEN SİSTEMİ: Kullanılan süre sadece karta yazarken gösterilir
                           final totalRemainingSeconds = customer.currentRemainingSeconds; // DOĞRU KALAN SÜRE
@@ -754,7 +754,7 @@ class _SalesScreenState extends State<SalesScreen> {
                                                       iconColor: AppTheme.primaryColor,
                                                       title: 'Toplam',
                                                       time: null,
-                                                      duration: totalTime,
+                                                      duration: Duration(seconds: customer.totalSeconds),
                                                       isSmall: true,
                                                     ),
                                                   ),
@@ -840,7 +840,7 @@ class _SalesScreenState extends State<SalesScreen> {
                                                   iconColor: AppTheme.primaryColor,
                                                   title: 'Toplam',
                                                   time: null,
-                                                  duration: totalTime,
+                                                  duration: Duration(seconds: customer.totalSeconds),
                                                   isSmall: false,
                                                 ),
                                               ),
@@ -889,35 +889,37 @@ class _SalesScreenState extends State<SalesScreen> {
                                     ),
                                   ),
                                   
-                                  // Satın alınan süre bilgisi
-                                  const SizedBox(height: 12),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                    decoration: BoxDecoration(
-                                      color: Colors.orange.shade50,
-                                      borderRadius: BorderRadius.circular(8),
-                                      border: Border.all(color: Colors.orange.shade200),
-                                    ),
-                                    child: Row(
-                                      mainAxisAlignment: MainAxisAlignment.center,
-                                      children: [
-                                        Icon(
-                                          Icons.timer_outlined,
-                                          size: 16,
-                                          color: Colors.orange.shade700,
-                                        ),
-                                        const SizedBox(width: 8),
-                                        Text(
-                                          'Satın Alınan Süre: ${_formatDuration(totalTime)}',
+                                  // Satın alınan süre bilgisi - sadece gerçekten para ödenen süre alımları için
+                                  if (customer.hasTimePurchase) ...[
+                                    const SizedBox(height: 12),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                      decoration: BoxDecoration(
+                                        color: Colors.orange.shade50,
+                                        borderRadius: BorderRadius.circular(8),
+                                        border: Border.all(color: Colors.orange.shade200),
+                                      ),
+                                      child: Row(
+                                        mainAxisAlignment: MainAxisAlignment.center,
+                                        children: [
+                                          Icon(
+                                            Icons.shopping_cart,
+                                            size: 16,
+                                            color: Colors.orange.shade700,
+                                          ),
+                                          const SizedBox(width: 8),
+                                                                                  Text(
+                                          'Satın Alınan Süre: ${_formatDuration(purchasedTime)}',
                                           style: TextStyle(
                                             fontSize: 13,
                                             fontWeight: FontWeight.w600,
                                             color: Colors.orange.shade700,
                                           ),
                                         ),
-                                      ],
+                                        ],
+                                      ),
                                     ),
-                                  ),
+                                  ],
                                   
 
                                 ],

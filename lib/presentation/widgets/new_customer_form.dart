@@ -292,6 +292,8 @@ class _NewCustomerFormState extends State<NewCustomerForm>
         price: _isUsingRemainingTime && _selectedDuration == 0 ? 0.0 : (_selectedDurationPrice?.price ?? 0.0),
         childCount: 1, // Yeni müşteri için 1 çocuk
         siblingIds: [], // Yeni müşteri için boş liste
+        hasTimePurchase: !(_isUsingRemainingTime && _selectedDuration == 0), // Sadece kalan süre kullanılmıyorsa satın alma var
+        purchasedSeconds: _isUsingRemainingTime && _selectedDuration == 0 ? 0 : (_selectedDuration * 60), // Bu girişte satın alınan süre
       );
 
       // Kaydet

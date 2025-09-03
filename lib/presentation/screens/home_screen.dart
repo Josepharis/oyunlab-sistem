@@ -1538,6 +1538,8 @@ class _HomeScreenState extends State<HomeScreen>
                       final additionalSeconds = additionalMinutes * 60;
                       final updatedCustomer = sibling.copyWith(
                         totalSeconds: sibling.totalSeconds + additionalSeconds,
+                        hasTimePurchase: true, // Süre satın alma işlemi yapıldı
+                        purchasedSeconds: additionalSeconds, // Bu girişte satın alınan süre
                       );
 
                       widget.customerRepository.updateCustomer(updatedCustomer);

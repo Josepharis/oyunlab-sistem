@@ -23,6 +23,10 @@ class Customer {
   // Kardeş yönetimi
   final int childCount;               // Toplam çocuk sayısı
   final List<String> siblingIds;      // Kardeş ID'leri
+  
+  // Satın alma bilgisi
+  final bool hasTimePurchase;         // Bu müşteri için süre satın alımı yapıldı mı?
+  final int purchasedSeconds;         // Bu girişte satın alınan süre (saniye)
 
   Customer({
     required this.id,
@@ -43,6 +47,8 @@ class Customer {
     this.price = 0.0,
     this.childCount = 1,
     this.siblingIds = const [],
+    this.hasTimePurchase = false,
+    this.purchasedSeconds = 0,
   });
 
   // KALAN SÜRE HESAPLAMA - YENİ SİSTEM
@@ -209,6 +215,8 @@ class Customer {
       final price = (json['price'] as num?)?.toDouble() ?? 0.0;
       final childCount = json['childCount'] as int? ?? 1;
       final siblingIds = (json['siblingIds'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
+      final hasTimePurchase = json['hasTimePurchase'] as bool? ?? false;
+      final purchasedSeconds = json['purchasedSeconds'] as int? ?? 0;
 
       return Customer(
         id: id,
@@ -229,6 +237,8 @@ class Customer {
         price: price,
         childCount: childCount,
         siblingIds: siblingIds,
+        hasTimePurchase: hasTimePurchase,
+        purchasedSeconds: purchasedSeconds,
       );
     } catch (e, stackTrace) {
       print('Customer.fromJson: Kritik hata: $e');
@@ -265,6 +275,8 @@ class Customer {
       'price': price,
       'childCount': childCount,
       'siblingIds': siblingIds,
+      'hasTimePurchase': hasTimePurchase,
+      'purchasedSeconds': purchasedSeconds,
       // ESKİ SİSTEM UYUMLULUĞU İÇİN
       'durationMinutes': durationMinutes,
       'originalDurationMinutes': originalDurationMinutes,
@@ -291,6 +303,8 @@ class Customer {
     double? price,
     int? childCount,
     List<String>? siblingIds,
+    bool? hasTimePurchase,
+    int? purchasedSeconds,
   }) {
     return Customer(
       id: id ?? this.id,
@@ -311,6 +325,8 @@ class Customer {
       price: price ?? this.price,
       childCount: childCount ?? this.childCount,
       siblingIds: siblingIds ?? this.siblingIds,
+      hasTimePurchase: hasTimePurchase ?? this.hasTimePurchase,
+      purchasedSeconds: purchasedSeconds ?? this.purchasedSeconds,
     );
   }
 
