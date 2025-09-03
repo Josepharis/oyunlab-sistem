@@ -58,8 +58,14 @@ class Customer {
       // Tamamlanan müşteriler için kaydedilen kalan süre
       return (remainingMinutes * 60) + remainingSeconds;
     } else {
-      // Aktif müşteriler için gerçek zamanlı kalan süre
-      return currentRemainingSeconds;
+      // Aktif müşteriler için de kaydedilen kalan süreyi kullan (statik)
+      // Eğer kaydedilen kalan süre yoksa, toplam süreyi kullan
+      if (remainingMinutes > 0 || remainingSeconds > 0) {
+        return (remainingMinutes * 60) + remainingSeconds;
+      } else {
+        // İlk kez hesaplanıyorsa, toplam süreyi kullan
+        return totalSeconds;
+      }
     }
   }
 
@@ -79,6 +85,17 @@ class Customer {
     final actualRemainingSeconds = totalSeconds - (totalElapsed - pausedSeconds) * childCount;
     final calculatedUsedSeconds = totalSeconds - actualRemainingSeconds;
     return calculatedUsedSeconds > 0 ? calculatedUsedSeconds : 0;
+  }
+
+  // SABİT KULLANILAN SÜRE (SALES SCREEN İÇİN - DİNAMİK DEĞİL)
+  int get staticUsedSeconds {
+    if (isCompleted) {
+      // Tamamlanan müşteriler için kaydedilen kullanılan süre
+      return usedSeconds;
+    } else {
+      // Aktif müşteriler için: toplam süre - statik kalan süre
+      return totalSeconds - staticRemainingSeconds;
+    }
   }
 
   // GERÇEK ZAMANLI KALAN SÜRE (ANA SAYFA İÇİN)
@@ -107,6 +124,7 @@ class Customer {
   Duration get currentRemainingTimePerChild => Duration(seconds: currentRemainingSecondsPerChild);
   Duration get usedTime => Duration(seconds: usedSeconds);
   Duration get currentUsedTime => Duration(seconds: currentUsedSeconds);
+  Duration get staticUsedTime => Duration(seconds: staticUsedSeconds);
 
   // ESKİ SİSTEM UYUMLULUĞU İÇİN
   int get durationMinutes => totalSeconds ~/ 60;

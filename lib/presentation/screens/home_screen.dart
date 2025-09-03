@@ -1837,6 +1837,8 @@ class _HomeScreenState extends State<HomeScreen>
                       final updatedCustomer = sibling.copyWith(
                         childCount: totalChildren, // Doğru toplam çocuk sayısı
                         siblingIds: [...currentSiblings.map((s) => s.id), ...List.generate(siblingCount, (index) => 'temp_${index}')],
+                        remainingMinutes: perChildSeconds ~/ 60, // Statik kalan süre güncelle
+                        remainingSeconds: perChildSeconds % 60, // Statik kalan süre saniye güncelle
                       );
                       
                       // Debug: Güncellenen müşteri bilgilerini log'la
@@ -2167,6 +2169,8 @@ class _HomeScreenState extends State<HomeScreen>
         totalSeconds: newTotalSeconds,
         childCount: remainingSiblings.length,
         siblingIds: remainingSiblings.map((s) => s.id).toList(),
+        remainingMinutes: perChildSeconds ~/ 60, // Statik kalan süre güncelle
+        remainingSeconds: perChildSeconds % 60, // Statik kalan süre saniye güncelle
       );
       
       // Debug: Güncellenen müşteri bilgilerini log'la

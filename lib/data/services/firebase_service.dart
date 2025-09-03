@@ -265,8 +265,7 @@ class FirebaseService {
               final todayEnd = todayStart.add(const Duration(days: 1)).subtract(const Duration(seconds: 1));
               
               final activeCustomers = customers.where((customer) {
-                // entryTime null değil ve geçerli bir tarih
-                if (customer.entryTime == null) return false;
+                // entryTime geçerli bir tarih
                 
                 // Sadece bugün giriş yapmış müşteriler
                 if (customer.entryTime.isBefore(todayStart) || customer.entryTime.isAfter(todayEnd)) {
@@ -309,6 +308,8 @@ class FirebaseService {
         return Stream.value([]);
       }
 
+      print('FIREBASE_SERVICE: getAllCustomersStream başlatıldı');
+
       // Stream'i optimize et - tüm müşterileri dinle
       return _customersCollection
           .snapshots()
@@ -320,14 +321,15 @@ class FirebaseService {
                   )
                   .toList();
               
+              print('FIREBASE_SERVICE: Stream\'den ${customers.length} müşteri alındı');
+              
               // Sadece bugün giriş yapmış müşterileri filtrele
               final now = DateTime.now();
               final todayStart = DateTime(now.year, now.month, now.day);
               final todayEnd = todayStart.add(const Duration(days: 1)).subtract(const Duration(seconds: 1));
               
               final todayCustomers = customers.where((customer) {
-                // entryTime null değil ve geçerli bir tarih
-                if (customer.entryTime == null) return false;
+                // entryTime geçerli bir tarih
                 
                 // Sadece bugün giriş yapmış müşteriler
                 if (customer.entryTime.isBefore(todayStart) || customer.entryTime.isAfter(todayEnd)) {
@@ -337,10 +339,11 @@ class FirebaseService {
                 return true;
               }).toList();
               
+              print('FIREBASE_SERVICE: Bugünkü müşteriler: ${todayCustomers.length}');
               return todayCustomers;
             },
-          )
-          .distinct(); // Aynı veriyi tekrar gönderme
+          );
+          // .distinct() kaldırıldı - yeni müşteri eklenmesi durumunda stream güncellenmeyebiliyordu
     } catch (e) {
       print('Tüm müşterileri dinlerken hata: $e');
       // Boş stream dön
@@ -679,8 +682,7 @@ class FirebaseService {
       final todayEnd = todayStart.add(const Duration(days: 1)).subtract(const Duration(seconds: 1));
       
       final activeCustomers = customers.where((customer) {
-        // entryTime null değil ve geçerli bir tarih
-        if (customer.entryTime == null) return false;
+        // entryTime geçerli bir tarih
         
         // Sadece bugün giriş yapmış müşteriler
         if (customer.entryTime.isBefore(todayStart) || customer.entryTime.isAfter(todayEnd)) {

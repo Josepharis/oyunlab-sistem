@@ -32,22 +32,80 @@ class _SalesScreenState extends State<SalesScreen> {
   List<Customer> _cachedCustomers = [];
   bool _isLoading = true;
   Timer? _debounceTimer;
+  
+  // Stream subscription for real-time updates
+  StreamSubscription<List<Customer>>? _customersSubscription;
 
   @override
   void initState() {
     super.initState();
-    _loadCustomers();
+    _startListeningToCustomers();
   }
 
   @override
   void dispose() {
     _searchController.dispose();
     _debounceTimer?.cancel();
+    _customersSubscription?.cancel();
     super.dispose();
   }
   
-  // Müşteri verilerini yükle
+  // Müşteri verilerini stream'den dinle
+  void _startListeningToCustomers() {
+    // İlk veri yüklenene kadar loading göster
+    setState(() {
+      _isLoading = true;
+    });
+    
+    // İlk veriyi hemen yükle
+    _loadInitialData();
+    
+    _customersSubscription = widget.customerRepository.customersStream.listen(
+      (customers) {
+        if (mounted) {
+          setState(() {
+            _cachedCustomers = customers;
+            _isLoading = false;
+          });
+          print('SALES_SCREEN: Stream güncellendi, ${customers.length} müşteri');
+        }
+      },
+      onError: (error) {
+        print('Sales screen customer stream error: $error');
+        if (mounted) {
+          setState(() {
+            _isLoading = false;
+          });
+        }
+      },
+    );
+  }
+
+  // İlk veriyi yükle
+  Future<void> _loadInitialData() async {
+    try {
+      final customers = await widget.customerRepository.getAllCustomersHistory();
+      if (mounted) {
+        setState(() {
+          _cachedCustomers = customers;
+          _isLoading = false;
+        });
+        print('SALES_SCREEN: İlk veri yüklendi, ${customers.length} müşteri');
+      }
+    } catch (e) {
+      print('SALES_SCREEN: İlk veri yüklenirken hata: $e');
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  // Müşteri verilerini yükle (eski method - artık kullanılmıyor)
   Future<void> _loadCustomers() async {
+    // Bu method artık kullanılmıyor, stream otomatik güncelleniyor
+    // Sadece RefreshIndicator için bırakıldı
     if (mounted) {
       setState(() {
         _isLoading = true;
@@ -107,15 +165,15 @@ class _SalesScreenState extends State<SalesScreen> {
     }).toList();
   }
 
-  // Cache'i temizle ve yeniden yükle
-  Future<void> _clearCacheAndReload() async {
-    setState(() {
-      _cachedCustomers.clear();
-      _isLoading = true;
-    });
-    
-    await _loadCustomers();
-  }
+  // Cache'i temizle ve yeniden yükle (artık kullanılmıyor - stream otomatik güncelleniyor)
+  // Future<void> _clearCacheAndReload() async {
+  //   setState(() {
+  //     _cachedCustomers.clear();
+  //     _isLoading = true;
+  //   });
+  //   
+  //   await _loadCustomers();
+  // }
 
   // Müşterileri sırala
   List<Customer> _getSortedCustomers() {
@@ -533,9 +591,9 @@ class _SalesScreenState extends State<SalesScreen> {
                           // Her müşteri için, toplam süre
                           final totalTime = Duration(seconds: customer.totalSeconds);
                           
-                          // KALAN SÜRE BAZLI SİSTEM: Kalan süreyi al, kullanılanı hesapla
+                          // STATİK SÜRE SİSTEMİ: Kalan ve kullanılan süre statik
                           final totalRemainingSeconds = customer.staticRemainingSeconds;
-                          final totalUsedSeconds = customer.totalSeconds - totalRemainingSeconds;
+                          final totalUsedSeconds = customer.staticUsedSeconds;
                           
                           final remainingTime = Duration(seconds: totalRemainingSeconds);
                           final usedDuration = Duration(seconds: totalUsedSeconds);
@@ -653,7 +711,6 @@ class _SalesScreenState extends State<SalesScreen> {
                                       builder: (context, constraints) {
                                         // Ekran genişliğine göre responsive ayarlar
                                         final isSmallScreen = constraints.maxWidth < 400;
-                                        final isMediumScreen = constraints.maxWidth < 600;
                                         
                                         if (isSmallScreen) {
                                           // Küçük ekranlar için dikey düzen

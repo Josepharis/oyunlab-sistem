@@ -287,6 +287,8 @@ class _NewCustomerFormState extends State<NewCustomerForm>
         totalSeconds: totalSeconds, // YENİ SİSTEM - Toplam süre saniye cinsinden
         usedSeconds: 0, // Yeni müşteri için 0
         pausedSeconds: 0, // Yeni müşteri için 0
+        remainingMinutes: totalSeconds ~/ 60, // İlk statik kalan süre = toplam süre
+        remainingSeconds: totalSeconds % 60, // İlk statik kalan süre saniye
         price: _isUsingRemainingTime && _selectedDuration == 0 ? 0.0 : (_selectedDurationPrice?.price ?? 0.0),
         childCount: 1, // Yeni müşteri için 1 çocuk
         siblingIds: [], // Yeni müşteri için boş liste

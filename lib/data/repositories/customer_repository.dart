@@ -64,11 +64,18 @@ class CustomerRepository {
       // Stream'i optimize et - tüm müşterileri dinle (aktif, tamamlanan, iptal edilen)
       _firebaseService.getAllCustomersStream().listen(
         (customers) {
-          // Sadece veri değiştiyse güncelle
-          if (_cachedCustomers.length != customers.length || 
-              !_areCustomersEqual(_cachedCustomers, customers)) {
-            _cachedCustomers = customers;
-            _customerStreamController.add(_cachedCustomers);
+          print('CUSTOMER_REPO: Stream\'den ${customers.length} müşteri alındı');
+          
+          // Her zaman güncelle - performans için eşitlik kontrolü kaldırıldı
+          // Çünkü yeni müşteri eklenmesi durumunda stream güncellenmeyebiliyordu
+          _cachedCustomers = customers;
+          _customerStreamController.add(_cachedCustomers);
+          print('CUSTOMER_REPO: Stream güncellendi, ${_cachedCustomers.length} müşteri');
+          
+          // Debug: Yeni müşteri var mı kontrol et
+          if (customers.isNotEmpty) {
+            final latestCustomer = customers.last;
+            print('CUSTOMER_REPO: En son müşteri: ${latestCustomer.childName} (${latestCustomer.ticketNumber})');
           }
         },
         onError: (error) {
@@ -84,21 +91,34 @@ class CustomerRepository {
 
 
   
-  /// Müşteri listelerinin eşit olup olmadığını kontrol eder
-  bool _areCustomersEqual(List<Customer> list1, List<Customer> list2) {
-    if (list1.length != list2.length) return false;
-    
-    for (int i = 0; i < list1.length; i++) {
-      if (list1[i].id != list2[i].id || 
-          list1[i].remainingTime != list2[i].remainingTime ||
-          list1[i].isCompleted != list2[i].isCompleted ||
-          list1[i].isActive != list2[i].isActive ||
-          list1[i].childCount != list2[i].childCount) {
-        return false;
-      }
-    }
-    return true;
-  }
+  // Müşteri listelerinin eşit olup olmadığını kontrol eder (artık kullanılmıyor)
+  // bool _areCustomersEqual(List<Customer> list1, List<Customer> list2) {
+  //   if (list1.length != list2.length) return false;
+  //   
+  //   // ID'lerin sırasını kontrol et
+  //   for (int i = 0; i < list1.length; i++) {
+  //     if (list1[i].id != list2[i].id) return false;
+  //   }
+  //   
+  //   // Her müşteri için önemli alanları kontrol et
+  //   for (int i = 0; i < list1.length; i++) {
+  //     final customer1 = list1[i];
+  //     final customer2 = list2[i];
+  //     
+  //     if (customer1.id != customer2.id || 
+  //         customer1.remainingTime != customer2.remainingTime ||
+  //         customer1.isCompleted != customer2.isCompleted ||
+  //         customer1.isActive != customer2.isActive ||
+  //         customer1.childCount != customer2.childCount ||
+  //         customer1.totalSeconds != customer2.totalSeconds ||
+  //         customer1.usedSeconds != customer2.usedSeconds ||
+  //         customer1.remainingMinutes != customer2.remainingMinutes ||
+  //         customer1.remainingSeconds != customer2.remainingSeconds) {
+  //       return false;
+  //     }
+  //   }
+  //   return true;
+  // }
 
   /// Tüm müşteri geçmişini getirir (aktif ve tamamlanmış)
   Future<List<Customer>> getAllCustomersHistory() async {
@@ -261,11 +281,11 @@ class CustomerRepository {
         print('CUSTOMER_REPO: Müşteri önbellekte bulundu, cache güncelleniyor');
 
         // Önbellekteki müşteriyi inactive olarak işaretle
-        final customer = _cachedCustomers[customerIndex];
-        final updatedCustomer = customer.copyWith(
-          isPaused: false,
-          pauseStartTime: null,
-        );
+        // final customer = _cachedCustomers[customerIndex];
+        // final updatedCustomer = customer.copyWith(
+        //   isPaused: false,
+        //   pauseStartTime: null,
+        // );
 
         // Önbelleği güncelle - aktif müşteriler arasından çıkar
         _cachedCustomers.removeAt(customerIndex);
