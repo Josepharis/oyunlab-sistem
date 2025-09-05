@@ -10,7 +10,6 @@ import 'core/theme/app_theme.dart';
 import 'core/di/service_locator.dart';
 import 'data/repositories/customer_repository.dart';
 import 'data/repositories/menu_repository.dart';
-import 'data/models/order_model.dart';
 import 'data/services/admin_auth_service.dart';
 import 'data/repositories/admin_user_repository.dart';
 import 'data/repositories/business_settings_repository.dart';
@@ -24,7 +23,6 @@ import 'presentation/screens/operations_screen.dart';
 import 'presentation/screens/profile_screen.dart';
 import 'presentation/screens/business_management_screen.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'core/utils/firebase_test_util.dart';
 
 // Firebase başlatma durumunu gösteren enum
 enum FirebaseInitStatus { notInitialized, initializing, initialized, error }
@@ -44,8 +42,7 @@ void main() async {
     firebaseStatus = FirebaseInitStatus.initialized;
     print('Firebase başarıyla başlatıldı');
 
-    // Firebase bağlantı ve izin testlerini çalıştır
-    await FirebaseTestUtil.testFirestoreConnection();
+    // Firebase bağlantı testi kaldırıldı
 
     // Firestore erişimini test et
     try {
@@ -87,31 +84,8 @@ void main() async {
     final menuRepo = MenuRepository();
     await menuRepo.loadMenuItems();
 
-    // Test amaçlı - menü boşsa örnek veri ekle
-    if (menuRepo.menuItems.isEmpty) {
-      print('Menü boş! Test verisi ekleniyor...');
-      final testItems = [
-        ProductItem(
-          id: 'test_burger_1',
-          name: "Flutter Burger",
-          price: 45.99,
-          category: ProductCategory.food,
-          description: "Lezzetli Flutter burger",
-        ),
-        ProductItem(
-          id: 'test_pizza_1',
-          name: "Dart Pizza",
-          price: 35.99,
-          category: ProductCategory.food,
-          description: "Özel Dart pizza",
-        ),
-      ];
-
-      await menuRepo.saveMenuItems(testItems);
-      print('Test menü öğeleri başarıyla kaydedildi!');
-    } else {
-      print('${menuRepo.menuItems.length} menü öğesi başarıyla yüklendi');
-    }
+    // Test verisi ekleme kaldırıldı
+    print('${menuRepo.menuItems.length} menü öğesi başarıyla yüklendi');
   } catch (e) {
     print('Menü verileri yüklenirken hata: $e');
   }
@@ -123,11 +97,7 @@ void main() async {
     await adminUserRepo.addDefaultAdminUser();
     print('Admin kullanıcıları başarıyla yüklendi');
     
-    // Firebase Authentication'da admin kullanıcısı oluştur
-    print('Firebase Authentication admin kullanıcısı oluşturuluyor...');
-    final adminAuthService = AdminAuthService();
-    await adminAuthService.createFirebaseAdminUser('yusuffrkn73@gmail.com', '123456');
-    print('Firebase Authentication admin kullanıcısı başarıyla oluşturuldu');
+    // Firebase Authentication admin kullanıcısı oluşturma kaldırıldı
   } catch (e) {
     print('Admin kullanıcıları yüklenirken hata: $e');
   }
@@ -165,19 +135,13 @@ void main() async {
       providers: [
         ChangeNotifierProvider(create: (_) => AdminAuthService()),
       ],
-      child: Consumer<AdminAuthService>(
-        builder: (context, authService, child) {
-          return OyunLabApp(authService: authService);
-        },
-      ),
+      child: const OyunLabApp(),
     ),
   );
 }
 
 class OyunLabApp extends StatelessWidget {
-  final AdminAuthService authService;
-  
-  const OyunLabApp({super.key, required this.authService});
+  const OyunLabApp({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -193,9 +157,24 @@ class OyunLabApp extends StatelessWidget {
         GlobalCupertinoLocalizations.delegate,
       ],
       supportedLocales: const [Locale('tr', 'TR')],
-      initialRoute: authService.isLoggedIn ? '/home' : '/login',
+      initialRoute: '/', // Ana route'dan başla
       routes: {
-        '/': (context) => const LoginScreen(), // Ana route eklendi
+        '/': (context) => Consumer<AdminAuthService>(
+          builder: (context, authService, child) {
+            // Auth durumunu kontrol et ve uygun ekranı göster
+            if (authService.isLoading) {
+              return const Scaffold(
+                body: Center(
+                  child: CircularProgressIndicator(),
+                ),
+              );
+            } else if (authService.isLoggedIn && authService.currentUser != null) {
+              return const MainScreen();
+            } else {
+              return const LoginScreen();
+            }
+          },
+        ),
         '/login': (context) => const LoginScreen(),
         '/register': (context) => const RegisterScreen(),
         '/home': (context) => const MainScreen(),
@@ -214,6 +193,7 @@ class MainScreen extends StatefulWidget {
 class _MainScreenState extends State<MainScreen> {
   int _selectedIndex = 0;
   late final CustomerRepository _customerRepository;
+  int? _tableNumber; // Filtrelenecek masa numarası
 
   final List<Widget> _screens = [];
 
@@ -225,6 +205,20 @@ class _MainScreenState extends State<MainScreen> {
     _initializeScreens();
   }
 
+  // Masa detay ekranına direkt geçiş
+  void _navigateToTableDetail(int ticketNumber) {
+    print('🔄 MAIN: _navigateToTableDetail çağrıldı - Bilet: $ticketNumber');
+    // Masa ekranına geç ve bilet numarasını parametre olarak gönder
+    setState(() {
+      _selectedIndex = 1;
+      _tableNumber = ticketNumber;
+      print('🔄 MAIN: _tableNumber güncellendi: $_tableNumber');
+      // Ekranları yeniden oluştur
+      _initializeScreens();
+      print('🔄 MAIN: Ekranlar yeniden oluşturuldu');
+    });
+  }
+
   void _initializeScreens() {
     _screens.clear();
     _screens.addAll([
@@ -233,8 +227,20 @@ class _MainScreenState extends State<MainScreen> {
         onDataCleared: () {
           // Sales screen otomatik olarak stream'den güncellenecek
         },
+        onGoToTable: (ticketNumber) {
+          print('🏠 HOME_SCREEN: Masaya git butonuna tıklandı - Bilet: $ticketNumber');
+          // Masa ekranına git (index 1) ve bilet numarasına göre masayı filtrele
+          setState(() {
+            _selectedIndex = 1;
+          });
+          // Masa detay ekranına direkt geçiş için callback'i çağır
+          _navigateToTableDetail(ticketNumber);
+        },
       ),
-      TableOrderScreen(customerRepository: _customerRepository),
+      TableOrderScreen(
+        customerRepository: _customerRepository,
+        filterTableNumber: _tableNumber,
+      ),
       SalesScreen(customerRepository: _customerRepository),
       Consumer<AdminAuthService>(
         builder: (context, authService, child) {

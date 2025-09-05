@@ -1,13 +1,13 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import 'package:intl/intl.dart';
 import 'package:fl_chart/fl_chart.dart';
 import '../../core/theme/app_theme.dart';
-import '../../data/services/admin_auth_service.dart';
+import '../../data/services/firebase_service.dart';
+import '../../data/services/sale_service.dart';
 import '../../data/models/task_model.dart';
 import '../../data/models/staff_model.dart';
+import '../../data/models/admin_user_model.dart';
 import '../../data/repositories/task_repository.dart';
-import '../../data/repositories/staff_repository.dart';
+import '../../data/repositories/admin_user_repository.dart';
 
 class PerformanceScreen extends StatefulWidget {
   const PerformanceScreen({Key? key}) : super(key: key);
@@ -28,11 +28,10 @@ class _PerformanceScreenState extends State<PerformanceScreen>
   // Tarih filtreleme
   DateTime _startDate = DateTime.now().subtract(const Duration(days: 30));
   DateTime _endDate = DateTime.now();
-  String _selectedPeriod = 'Son 30 Gün';
   
   // Grafik verileri
-  List<FlSpot> _taskScoreTrend = [];
-  List<FlSpot> _salesTrend = [];
+  List<BarChartGroupData> _taskScoreBars = [];
+  List<BarChartGroupData> _salesBars = [];
 
   @override
   void initState() {
@@ -63,7 +62,7 @@ class _PerformanceScreenState extends State<PerformanceScreen>
       _calculateTaskScores();
       
       // Satış performansını hesapla
-      _calculateSalesPerformance();
+      await _calculateSalesPerformance();
       
       // Grafik verilerini oluştur
       _generateChartData();
@@ -80,86 +79,54 @@ class _PerformanceScreenState extends State<PerformanceScreen>
   }
 
   Future<void> _loadCompletedTasks() async {
-    // TODO: TaskRepository'den tamamlanan görevleri al
-    // Şimdilik mock data kullanıyoruz
-          _completedTasks = [
-        Task(
-          id: '1',
-          title: 'Oyun alanı temizliği',
-          description: 'Oyun alanının temizlenmesi',
-          difficulty: TaskDifficulty.easy,
-          status: TaskStatus.completed,
-          createdAt: DateTime.now().subtract(const Duration(days: 1)),
-          completedAt: DateTime.now().subtract(const Duration(hours: 2)),
-          assignedStaffIds: ['staff1', 'staff2'],
-          completedByStaffIds: ['staff1', 'staff2'],
-          complaints: [],
-          isActive: true,
-        ),
-        Task(
-          id: '2',
-          title: 'Ekipman kontrolü',
-          description: 'Tüm ekipmanların kontrol edilmesi',
-          difficulty: TaskDifficulty.medium,
-          status: TaskStatus.completed,
-          createdAt: DateTime.now().subtract(const Duration(days: 2)),
-          completedAt: DateTime.now().subtract(const Duration(hours: 5)),
-          assignedStaffIds: ['staff1'],
-          completedByStaffIds: ['staff1'],
-          complaints: [],
-          isActive: true,
-        ),
-        Task(
-          id: '3',
-          title: 'Güvenlik kontrolü',
-          description: 'Güvenlik sistemlerinin kontrol edilmesi',
-          difficulty: TaskDifficulty.hard,
-          status: TaskStatus.completed,
-          createdAt: DateTime.now().subtract(const Duration(days: 3)),
-          completedAt: DateTime.now().subtract(const Duration(hours: 1)),
-          assignedStaffIds: ['staff2', 'staff3', 'staff4'],
-          completedByStaffIds: ['staff2', 'staff3', 'staff4'],
-          complaints: [],
-          isActive: true,
-        ),
-      ];
+    try {
+      final taskRepository = TaskRepository(FirebaseService());
+      _completedTasks = await taskRepository.getCompletedTasks();
+      
+      // Tarih filtresini uygula
+      _completedTasks = _completedTasks.where((task) {
+        if (task.completedAt == null) return false;
+        return task.completedAt!.isAfter(_startDate) && 
+               task.completedAt!.isBefore(_endDate.add(const Duration(days: 1)));
+      }).toList();
+    } catch (e) {
+      print('Tamamlanan görevler yüklenirken hata: $e');
+      _completedTasks = [];
+    }
   }
 
   Future<void> _loadStaffList() async {
-    // TODO: StaffRepository'den personel listesini al
-    // Şimdilik mock data kullanıyoruz
-          _staffList = [
-        Staff(
-          id: 'staff1', 
-          name: 'Ahmet Yılmaz', 
-          email: 'ahmet@oyunlab.com',
-          createdAt: DateTime.now().subtract(const Duration(days: 30)),
-        ),
-        Staff(
-          id: 'staff2', 
-          name: 'Fatma Demir', 
-          email: 'fatma@oyunlab.com',
-          createdAt: DateTime.now().subtract(const Duration(days: 25)),
-        ),
-        Staff(
-          id: 'staff3', 
-          name: 'Mehmet Kaya', 
-          email: 'mehmet@oyunlab.com',
-          createdAt: DateTime.now().subtract(const Duration(days: 20)),
-        ),
-        Staff(
-          id: 'staff4', 
-          name: 'Ayşe Özkan', 
-          email: 'ayse@oyunlab.com',
-          createdAt: DateTime.now().subtract(const Duration(days: 15)),
-        ),
-      ];
+    try {
+      // AdminUserRepository'den tüm kullanıcıları çek ve staff olanları filtrele
+      final adminUserRepository = AdminUserRepository();
+      final allUsers = await adminUserRepository.getAllAdminUsers();
+      
+      _staffList = allUsers
+          .where((user) => user.role == UserRole.staff)
+          .map((user) => Staff(
+                id: user.id,
+                name: user.name,
+                email: user.email,
+                createdAt: user.createdAt,
+              ))
+          .toList();
+      
+      print('PERFORMANCE: ${_staffList.length} personel yüklendi');
+    } catch (e) {
+      print('Personel listesi yüklenirken hata: $e');
+      _staffList = [];
+    }
   }
 
   void _calculateTaskScores() {
     _taskScores.clear();
     
     for (final task in _completedTasks) {
+      // Sadece tamamlanan görevler için puan hesapla
+      if (task.status != TaskStatus.completed || task.completedByStaffIds.isEmpty) {
+        continue;
+      }
+      
       // Görev zorluğuna göre puan belirle
       double baseScore;
       switch (task.difficulty) {
@@ -174,28 +141,85 @@ class _PerformanceScreenState extends State<PerformanceScreen>
           break;
       }
       
-      // Kişi sayısına böl
-      final personCount = task.assignedStaffIds.length;
-      final scorePerPerson = baseScore / personCount;
+      // Görevi tamamlayan kişi sayısına eşit olarak böl
+      final completedByCount = task.completedByStaffIds.length;
+      final scorePerPerson = baseScore / completedByCount;
       
-      // Her kişiye puan ekle
-      for (final staffId in task.assignedStaffIds) {
+      // Her tamamlayan kişiye eşit pay ver
+      for (final staffId in task.completedByStaffIds) {
         _taskScores[staffId] = (_taskScores[staffId] ?? 0.0) + scorePerPerson;
       }
     }
   }
 
-  void _calculateSalesPerformance() {
+  Future<void> _calculateSalesPerformance() async {
     _salesPerformance.clear();
     
-    // TODO: Gerçek satış verilerinden hesapla
-    // Şimdilik mock data kullanıyoruz
-    _salesPerformance = {
-      'staff1': 1250.0,
-      'staff2': 980.0,
-      'staff3': 2100.0,
-      'staff4': 750.0,
-    };
+    try {
+      // Tüm personellere başlangıçta 0 satış ata
+      for (final staff in _staffList) {
+        _salesPerformance[staff.id] = 0.0;
+      }
+      
+      // SaleService'den her personelin satış verilerini çek
+      final saleService = SaleService();
+      
+      // Önce tüm satış verilerini çek
+      final allSales = await saleService.getAllSales(
+        startDate: _startDate,
+        endDate: _endDate.add(const Duration(days: 1)),
+      );
+      
+      print('PERFORMANCE: Toplam ${allSales.length} satış kaydı bulundu');
+      
+      // Her satış kaydının userId'sini logla
+      for (var sale in allSales.take(3)) {
+        print('PERFORMANCE: Satış - userId: ${sale.userId}, amount: ${sale.amount}₺');
+      }
+      
+      // UserId'leri personel ID'leri ile eşleştir
+      final Map<String, String> userIdToStaffId = {
+        'BEFJaZjpIcWcJLXretgminPv3f62': '8Du1xz4Mjp6XoYUqTwNb', // Deneme
+        'B26gwidYH2TfiJ4NITBYjejYsvL2': 'wNSdTHJopYJ9BwwzTsLE', // Ali
+        // Diğer userId'ler için varsayılan atama
+      };
+      
+      // Her personel için satış verilerini hesapla
+      for (final staff in _staffList) {
+        try {
+          print('PERFORMANCE: ${staff.name} (ID: ${staff.id}) için satış aranıyor...');
+          
+          // Personelin ID'si ile eşleşen satışları bul
+          double totalSales = 0.0;
+          final staffSales = allSales.where((sale) {
+            // Önce doğrudan eşleşme kontrol et
+            if (sale.userId == staff.id) return true;
+            
+            // Sonra userId mapping'den kontrol et
+            final mappedStaffId = userIdToStaffId[sale.userId];
+            return mappedStaffId == staff.id;
+          }).toList();
+          
+          for (var sale in staffSales) {
+            totalSales += sale.amount;
+          }
+          
+          _salesPerformance[staff.id] = totalSales;
+          print('PERFORMANCE: ${staff.name} - ${totalSales}₺ satış (${staffSales.length} kayıt)');
+        } catch (e) {
+          print('PERFORMANCE: ${staff.name} satış hesaplama hatası: $e');
+          _salesPerformance[staff.id] = 0.0;
+        }
+      }
+      
+      print('PERFORMANCE: Satış performansı hesaplandı - ${_salesPerformance.length} personel');
+    } catch (e) {
+      print('Satış performansı hesaplanırken hata: $e');
+      // Hata durumunda tüm personellere 0 satış ata
+      for (final staff in _staffList) {
+        _salesPerformance[staff.id] = 0.0;
+      }
+    }
   }
 
   void _showDateRangePicker() {
@@ -232,7 +256,6 @@ class _PerformanceScreenState extends State<PerformanceScreen>
     setState(() {
       _endDate = DateTime.now();
       _startDate = DateTime.now().subtract(Duration(days: days));
-      _selectedPeriod = 'Son $days Gün';
     });
     _loadPerformanceData();
   }
@@ -249,7 +272,6 @@ class _PerformanceScreenState extends State<PerformanceScreen>
       setState(() {
         _startDate = picked.start;
         _endDate = picked.end;
-        _selectedPeriod = '${DateFormat('dd/MM/yyyy').format(_startDate)} - ${DateFormat('dd/MM/yyyy').format(_endDate)}';
       });
       _loadPerformanceData();
     }
@@ -257,19 +279,63 @@ class _PerformanceScreenState extends State<PerformanceScreen>
   }
 
   void _generateChartData() {
-    // Görev puanı trend grafiği (son 7 gün)
-    _taskScoreTrend = List.generate(7, (index) {
-      final date = DateTime.now().subtract(Duration(days: 6 - index));
-      final dayScore = _taskScores.values.fold(0.0, (sum, score) => sum + score) / 7;
-      return FlSpot(index.toDouble(), dayScore);
-    });
-
-    // Satış trend grafiği (son 7 gün)
-    _salesTrend = List.generate(7, (index) {
-      final date = DateTime.now().subtract(Duration(days: 6 - index));
-      final daySales = _salesPerformance.values.fold(0.0, (sum, sales) => sum + sales) / 7;
-      return FlSpot(index.toDouble(), daySales);
-    });
+    // Görev puanı bar chart verileri (her personel için ayrı bar)
+    _taskScoreBars = _staffList.asMap().entries.map((entry) {
+      final index = entry.key;
+      final staff = entry.value;
+      final score = _taskScores[staff.id] ?? 0.0;
+      
+      return BarChartGroupData(
+        x: index,
+        barRods: [
+          BarChartRodData(
+            toY: score,
+            color: _getScoreColor(score),
+            width: 20,
+            borderRadius: const BorderRadius.only(
+              topLeft: Radius.circular(4),
+              topRight: Radius.circular(4),
+            ),
+          ),
+        ],
+      );
+    }).toList();
+    
+    // Satış bar chart verileri (her personel için ayrı bar)
+    _salesBars = _staffList.asMap().entries.map((entry) {
+      final index = entry.key;
+      final staff = entry.value;
+      final sales = _salesPerformance[staff.id] ?? 0.0;
+      
+      return BarChartGroupData(
+        x: index,
+        barRods: [
+          BarChartRodData(
+            toY: sales,
+            color: _getSalesColor(sales),
+            width: 20,
+            borderRadius: const BorderRadius.only(
+              topLeft: Radius.circular(4),
+              topRight: Radius.circular(4),
+            ),
+          ),
+        ],
+      );
+    }).toList();
+  }
+  
+  Color _getScoreColor(double score) {
+    if (score >= 20) return Colors.green;
+    if (score >= 10) return Colors.orange;
+    if (score > 0) return Colors.blue;
+    return Colors.grey;
+  }
+  
+  Color _getSalesColor(double sales) {
+    if (sales >= 5000) return Colors.green;
+    if (sales >= 2000) return Colors.orange;
+    if (sales > 0) return Colors.blue;
+    return Colors.grey;
   }
 
   @override
@@ -277,25 +343,52 @@ class _PerformanceScreenState extends State<PerformanceScreen>
     return Scaffold(
       backgroundColor: AppTheme.backgroundColor,
       appBar: AppBar(
-        title: const Text(
-          'Performans Takibi',
-          style: TextStyle(
-            fontWeight: FontWeight.bold,
-            color: Colors.white,
-          ),
+        title: LayoutBuilder(
+          builder: (context, constraints) {
+            final screenWidth = constraints.maxWidth;
+            final isSmallScreen = screenWidth < 400;
+            
+            return Text(
+              'Performans Takibi',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+                fontSize: isSmallScreen ? 16 : 20,
+              ),
+            );
+          },
         ),
         backgroundColor: AppTheme.primaryColor,
         elevation: 0,
         actions: [
-          IconButton(
-            onPressed: _showDateRangePicker,
-            icon: const Icon(Icons.date_range_rounded),
-            tooltip: 'Tarih Filtrele',
-          ),
-          IconButton(
-            onPressed: _loadPerformanceData,
-            icon: const Icon(Icons.refresh_rounded),
-            tooltip: 'Yenile',
+          // Responsive action buttons
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final screenWidth = constraints.maxWidth;
+              final isSmallScreen = screenWidth < 400;
+              
+              return Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    onPressed: _showDateRangePicker,
+                    icon: Icon(
+                      Icons.date_range_rounded,
+                      size: isSmallScreen ? 20 : 24,
+                    ),
+                    tooltip: 'Tarih Filtrele',
+                  ),
+                  IconButton(
+                    onPressed: _loadPerformanceData,
+                    icon: Icon(
+                      Icons.refresh_rounded,
+                      size: isSmallScreen ? 20 : 24,
+                    ),
+                    tooltip: 'Yenile',
+                  ),
+                ],
+              );
+            },
           ),
         ],
         bottom: TabBar(
@@ -322,9 +415,6 @@ class _PerformanceScreenState extends State<PerformanceScreen>
   }
 
   Widget _buildTaskScoresTab() {
-    // Puanlara göre sırala
-    final sortedScores = _taskScores.entries.toList()
-      ..sort((a, b) => b.value.compareTo(a.value));
 
     return Padding(
       padding: const EdgeInsets.all(16.0),
@@ -335,7 +425,7 @@ class _PerformanceScreenState extends State<PerformanceScreen>
           
           const SizedBox(height: 20),
           
-          // Trend Grafiği
+          // Personel Görev Puanları Bar Chart
           Container(
             height: 200,
             padding: const EdgeInsets.all(16),
@@ -355,7 +445,7 @@ class _PerformanceScreenState extends State<PerformanceScreen>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Görev Puanı Trendi (Son 7 Gün)',
+                  'Personel Görev Puanları (${_startDate.day}/${_startDate.month} - ${_endDate.day}/${_endDate.month})',
                   style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.bold,
@@ -364,8 +454,8 @@ class _PerformanceScreenState extends State<PerformanceScreen>
                 ),
                 const SizedBox(height: 16),
                 Expanded(
-                  child: LineChart(
-                    LineChartData(
+                  child: BarChart(
+                    BarChartData(
                       gridData: FlGridData(show: false),
                       titlesData: FlTitlesData(
                         leftTitles: AxisTitles(
@@ -387,14 +477,16 @@ class _PerformanceScreenState extends State<PerformanceScreen>
                           sideTitles: SideTitles(
                             showTitles: true,
                             getTitlesWidget: (value, meta) {
-                              const days = ['Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt', 'Paz'];
-                              return Text(
-                                days[value.toInt()],
-                                style: TextStyle(
-                                  color: Colors.blue.shade600,
-                                  fontSize: 10,
-                                ),
-                              );
+                              if (value.toInt() < _staffList.length) {
+                                return Text(
+                                  _staffList[value.toInt()].name,
+                                  style: TextStyle(
+                                    color: Colors.blue.shade600,
+                                    fontSize: 10,
+                                  ),
+                                );
+                              }
+                              return const Text('');
                             },
                           ),
                         ),
@@ -402,19 +494,8 @@ class _PerformanceScreenState extends State<PerformanceScreen>
                         topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
                       ),
                       borderData: FlBorderData(show: false),
-                      lineBarsData: [
-                        LineChartBarData(
-                          spots: _taskScoreTrend,
-                          isCurved: true,
-                          color: Colors.blue.shade400,
-                          barWidth: 3,
-                          dotData: FlDotData(show: true),
-                          belowBarData: BarAreaData(
-                            show: true,
-                            color: Colors.blue.shade100.withOpacity(0.3),
-                          ),
-                        ),
-                      ],
+                      barGroups: _taskScoreBars,
+                      maxY: _taskScores.values.isNotEmpty ? _taskScores.values.reduce((a, b) => a > b ? a : b) + 5 : 10,
                     ),
                   ),
                 ),
@@ -427,23 +508,19 @@ class _PerformanceScreenState extends State<PerformanceScreen>
           // Puan Sıralaması
           Expanded(
             child: ListView.builder(
-              itemCount: sortedScores.length,
+              itemCount: _staffList.length,
               itemBuilder: (context, index) {
-                final entry = sortedScores[index];
-                final staff = _staffList.firstWhere(
-                  (s) => s.id == entry.key,
-                  orElse: () => Staff(
-                    id: '', 
-                    name: 'Bilinmeyen', 
-                    email: '',
-                    createdAt: DateTime.now(),
-                  ),
-                );
+                // Puanı olan personelleri önce göster
+                final sortedStaff = _staffList.where((s) => (_taskScores[s.id] ?? 0.0) > 0).toList()
+                  ..addAll(_staffList.where((s) => (_taskScores[s.id] ?? 0.0) == 0.0).toList());
+                
+                final actualStaff = sortedStaff[index];
+                final actualScore = _taskScores[actualStaff.id] ?? 0.0;
                 
                 return _buildScoreCard(
                   rank: index + 1,
-                  staff: staff,
-                  score: entry.value,
+                  staff: actualStaff,
+                  score: actualScore,
                 );
               },
             ),
@@ -454,20 +531,13 @@ class _PerformanceScreenState extends State<PerformanceScreen>
   }
 
   Widget _buildSalesPerformanceTab() {
-    // Satış performansına göre sırala
-    final sortedSales = _salesPerformance.entries.toList()
-      ..sort((a, b) => b.value.compareTo(a.value));
-
     return Padding(
       padding: const EdgeInsets.all(16.0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           
-          
-          const SizedBox(height: 20),
-          
-          // Trend Grafiği
+          // Personel Satış Bar Chart
           Container(
             height: 200,
             padding: const EdgeInsets.all(16),
@@ -487,7 +557,7 @@ class _PerformanceScreenState extends State<PerformanceScreen>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Satış Trendi (Son 7 Gün)',
+                  'Personel Satış Performansı (${_startDate.day}/${_startDate.month} - ${_endDate.day}/${_endDate.month})',
                   style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.bold,
@@ -496,8 +566,8 @@ class _PerformanceScreenState extends State<PerformanceScreen>
                 ),
                 const SizedBox(height: 16),
                 Expanded(
-                  child: LineChart(
-                    LineChartData(
+                  child: BarChart(
+                    BarChartData(
                       gridData: FlGridData(show: false),
                       titlesData: FlTitlesData(
                         leftTitles: AxisTitles(
@@ -519,14 +589,16 @@ class _PerformanceScreenState extends State<PerformanceScreen>
                           sideTitles: SideTitles(
                             showTitles: true,
                             getTitlesWidget: (value, meta) {
-                              const days = ['Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt', 'Paz'];
-                              return Text(
-                                days[value.toInt()],
-                                style: TextStyle(
-                                  color: Colors.green.shade600,
-                                  fontSize: 10,
-                                ),
-                              );
+                              if (value.toInt() < _staffList.length) {
+                                return Text(
+                                  _staffList[value.toInt()].name,
+                                  style: TextStyle(
+                                    color: Colors.green.shade600,
+                                    fontSize: 10,
+                                  ),
+                                );
+                              }
+                              return const Text('');
                             },
                           ),
                         ),
@@ -534,19 +606,8 @@ class _PerformanceScreenState extends State<PerformanceScreen>
                         topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
                       ),
                       borderData: FlBorderData(show: false),
-                      lineBarsData: [
-                        LineChartBarData(
-                          spots: _salesTrend,
-                          isCurved: true,
-                          color: Colors.green.shade400,
-                          barWidth: 3,
-                          dotData: FlDotData(show: true),
-                          belowBarData: BarAreaData(
-                            show: true,
-                            color: Colors.green.shade100.withOpacity(0.3),
-                          ),
-                        ),
-                      ],
+                      barGroups: _salesBars,
+                      maxY: _salesPerformance.values.isNotEmpty ? _salesPerformance.values.reduce((a, b) => a > b ? a : b) + 1000 : 1000,
                     ),
                   ),
                 ),
@@ -559,23 +620,19 @@ class _PerformanceScreenState extends State<PerformanceScreen>
           // Satış Sıralaması
           Expanded(
             child: ListView.builder(
-              itemCount: sortedSales.length,
+              itemCount: _staffList.length,
               itemBuilder: (context, index) {
-                final entry = sortedSales[index];
-                final staff = _staffList.firstWhere(
-                  (s) => s.id == entry.key,
-                  orElse: () => Staff(
-                    id: '', 
-                    name: 'Bilinmeyen', 
-                    email: '',
-                    createdAt: DateTime.now(),
-                  ),
-                );
+                // Satışı olan personelleri önce göster
+                final sortedStaff = _staffList.where((s) => (_salesPerformance[s.id] ?? 0.0) > 0).toList()
+                  ..addAll(_staffList.where((s) => (_salesPerformance[s.id] ?? 0.0) == 0.0).toList());
+                
+                final actualStaff = sortedStaff[index];
+                final actualSales = _salesPerformance[actualStaff.id] ?? 0.0;
                 
                 return _buildSalesCard(
                   rank: index + 1,
-                  staff: staff,
-                  sales: entry.value,
+                  staff: actualStaff,
+                  sales: actualSales,
                 );
               },
             ),
@@ -593,22 +650,29 @@ class _PerformanceScreenState extends State<PerformanceScreen>
     Color rankColor;
     IconData rankIcon;
     
-    switch (rank) {
-      case 1:
-        rankColor = Colors.amber;
-        rankIcon = Icons.emoji_events_rounded;
-        break;
-      case 2:
-        rankColor = Colors.grey.shade400;
-        rankIcon = Icons.workspace_premium_rounded;
-        break;
-      case 3:
-        rankColor = Colors.brown.shade400;
-        rankIcon = Icons.military_tech_rounded;
-        break;
-      default:
-        rankColor = Colors.blue.shade400;
-        rankIcon = Icons.star_rounded;
+    if (score == 0.0) {
+      // Puanı olmayan personeller için
+      rankColor = Colors.grey.shade300;
+      rankIcon = Icons.person_rounded;
+    } else {
+      // Puanı olan personeller için sıralama
+      switch (rank) {
+        case 1:
+          rankColor = Colors.amber;
+          rankIcon = Icons.emoji_events_rounded;
+          break;
+        case 2:
+          rankColor = Colors.grey.shade400;
+          rankIcon = Icons.workspace_premium_rounded;
+          break;
+        case 3:
+          rankColor = Colors.brown.shade400;
+          rankIcon = Icons.military_tech_rounded;
+          break;
+        default:
+          rankColor = Colors.blue.shade400;
+          rankIcon = Icons.star_rounded;
+      }
     }
 
     return Card(
@@ -663,15 +727,15 @@ class _PerformanceScreenState extends State<PerformanceScreen>
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               decoration: BoxDecoration(
-                color: Colors.blue.shade100,
+                color: score > 0 ? Colors.blue.shade100 : Colors.grey.shade100,
                 borderRadius: BorderRadius.circular(20),
               ),
               child: Text(
-                '${score.toStringAsFixed(1)} puan',
+                score > 0 ? '${score.toStringAsFixed(1)} puan' : 'Henüz puan yok',
                 style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.bold,
-                  color: Colors.blue.shade700,
+                  color: score > 0 ? Colors.blue.shade700 : Colors.grey.shade600,
                 ),
               ),
             ),
@@ -689,22 +753,29 @@ class _PerformanceScreenState extends State<PerformanceScreen>
     Color rankColor;
     IconData rankIcon;
     
-    switch (rank) {
-      case 1:
-        rankColor = Colors.amber;
-        rankIcon = Icons.emoji_events_rounded;
-        break;
-      case 2:
-        rankColor = Colors.grey.shade400;
-        rankIcon = Icons.workspace_premium_rounded;
-        break;
-      case 3:
-        rankColor = Colors.brown.shade400;
-        rankIcon = Icons.military_tech_rounded;
-        break;
-      default:
-        rankColor = Colors.green.shade400;
-        rankIcon = Icons.trending_up_rounded;
+    if (sales == 0.0) {
+      // Satışı olmayan personeller için
+      rankColor = Colors.grey.shade300;
+      rankIcon = Icons.person_rounded;
+    } else {
+      // Satışı olan personeller için sıralama
+      switch (rank) {
+        case 1:
+          rankColor = Colors.amber;
+          rankIcon = Icons.emoji_events_rounded;
+          break;
+        case 2:
+          rankColor = Colors.grey.shade400;
+          rankIcon = Icons.workspace_premium_rounded;
+          break;
+        case 3:
+          rankColor = Colors.brown.shade400;
+          rankIcon = Icons.military_tech_rounded;
+          break;
+        default:
+          rankColor = Colors.green.shade400;
+          rankIcon = Icons.trending_up_rounded;
+      }
     }
 
     return Card(
@@ -759,15 +830,15 @@ class _PerformanceScreenState extends State<PerformanceScreen>
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               decoration: BoxDecoration(
-                color: Colors.green.shade100,
+                color: sales > 0 ? Colors.green.shade100 : Colors.grey.shade100,
                 borderRadius: BorderRadius.circular(20),
               ),
               child: Text(
-                '${sales.toStringAsFixed(0)} ₺',
+                sales > 0 ? '${sales.toStringAsFixed(0)} ₺' : 'Henüz satış yok',
                 style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.bold,
-                  color: Colors.green.shade700,
+                  color: sales > 0 ? Colors.green.shade700 : Colors.grey.shade600,
                 ),
               ),
             ),

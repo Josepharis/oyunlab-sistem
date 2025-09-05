@@ -68,9 +68,6 @@ enum ProductCategory {
   drink, // İçecekler
   dessert, // Tatlılar
   toy, // Oyuncaklar
-  game, // Oyun Grupları
-  coding, // Robotik Kodlama
-  other, // Diğer
 }
 
 // Örnek ürünler
@@ -109,7 +106,7 @@ class ProductItem {
       }
       
       // Kategori dönüşümü
-      ProductCategory category = ProductCategory.other;
+      ProductCategory category = ProductCategory.toy; // Varsayılan kategori
       if (json['category'] != null) {
         String categoryStr = json['category'].toString().toLowerCase();
         
@@ -121,10 +118,6 @@ class ProductItem {
           category = ProductCategory.dessert;
         } else if (categoryStr.contains('toy')) {
           category = ProductCategory.toy;
-        } else if (categoryStr.contains('game')) {
-          category = ProductCategory.game;
-        } else if (categoryStr.contains('cod')) {
-          category = ProductCategory.coding;
         }
       }
       
@@ -143,7 +136,7 @@ class ProductItem {
         id: '', // ID'yi boş bırak
         name: 'Hatalı Ürün',
         price: 0.0,
-        category: ProductCategory.other,
+        category: ProductCategory.toy,
       );
     }
   }
@@ -196,12 +189,6 @@ String getCategoryTitle(ProductCategory category) {
       return 'Tatlılar';
     case ProductCategory.toy:
       return 'Oyuncaklar';
-    case ProductCategory.game:
-      return 'Oyun Grupları';
-    case ProductCategory.coding:
-      return 'Robotik Kodlama';
-    case ProductCategory.other:
-      return 'Diğer';
   }
 }
 
@@ -293,89 +280,4 @@ final List<ProductItem> menuItems = [
     stock: 15,
   ),
   ProductItem(id: '', name: 'Balon', price: 10.0, category: ProductCategory.toy, stock: 100),
-
-  // OYUN GRUPLARI
-  ProductItem(
-    id: '',
-    name: 'Grup Oyunu (30 dk)',
-    price: 100.0,
-    category: ProductCategory.game,
-    stock: 10,
-  ),
-  ProductItem(
-    id: '',
-    name: 'Doğum Günü Paketi',
-    price: 500.0,
-    category: ProductCategory.game,
-    stock: 5,
-  ),
-  ProductItem(id: '', name: 'Yüz Boyama', price: 40.0, category: ProductCategory.game, stock: 20),
-  ProductItem(
-    id: '',
-    name: 'Masa Oyunu (60 dk)',
-    price: 80.0,
-    category: ProductCategory.game,
-    stock: 15,
-  ),
-  ProductItem(
-    id: '',
-    name: 'Özel Etkinlik (kişi başı)',
-    price: 75.0,
-    category: ProductCategory.game,
-    stock: 25,
-  ),
-
-  // ROBOTIK KODLAMA
-  ProductItem(
-    id: '',
-    name: 'Kodlama Dersi (30 dk)',
-    price: 120.0,
-    category: ProductCategory.coding,
-    stock: 8,
-  ),
-  ProductItem(
-    id: '',
-    name: 'Robot Kit Kullanımı',
-    price: 150.0,
-    category: ProductCategory.coding,
-    stock: 6,
-  ),
-  ProductItem(
-    id: '',
-    name: 'Grup Kodlama (kişi başı)',
-    price: 100.0,
-    category: ProductCategory.coding,
-    stock: 12,
-  ),
-  ProductItem(
-    id: '',
-    name: 'Elektronik Atölye',
-    price: 180.0,
-    category: ProductCategory.coding,
-    stock: 4,
-  ),
-  ProductItem(
-    id: '',
-    name: 'Kodlama Aylık Paket',
-    price: 450.0,
-    category: ProductCategory.coding,
-    stock: 10,
-  ),
-
-  // DIĞER
-  ProductItem(
-    id: '',
-    name: 'Hediye Paketi',
-    price: 50.0,
-    category: ProductCategory.other,
-    stock: 30,
-  ),
-  ProductItem(
-    id: '',
-    name: 'Fotoğraf Çekimi',
-    price: 60.0,
-    category: ProductCategory.other,
-    stock: 15,
-  ),
-  ProductItem(id: '', name: 'Özel İstek', price: 0.0, category: ProductCategory.other, stock: 999),
 ];

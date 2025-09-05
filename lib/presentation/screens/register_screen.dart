@@ -191,9 +191,20 @@ class _RegisterScreenState extends State<RegisterScreen> {
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        leading: IconButton(
-          icon: Icon(Icons.arrow_back, color: AppTheme.primaryColor),
-          onPressed: () => Navigator.pop(context),
+        leading: LayoutBuilder(
+          builder: (context, constraints) {
+            final screenWidth = constraints.maxWidth;
+            final isSmallScreen = screenWidth < 400;
+            
+            return IconButton(
+              icon: Icon(
+                Icons.arrow_back, 
+                color: AppTheme.primaryColor,
+                size: isSmallScreen ? 20 : 24,
+              ),
+              onPressed: () => Navigator.pop(context),
+            );
+          },
         ),
       ),
       body: SafeArea(

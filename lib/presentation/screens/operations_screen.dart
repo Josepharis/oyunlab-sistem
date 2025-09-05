@@ -74,39 +74,65 @@ class _OperationsScreenState extends State<OperationsScreen>
     return Scaffold(
       backgroundColor: AppTheme.backgroundColor,
       appBar: AppBar(
-        title: const Text(
-          'İşleyiş',
-          style: TextStyle(
-            fontWeight: FontWeight.bold,
-            color: Colors.white,
-          ),
+        title: LayoutBuilder(
+          builder: (context, constraints) {
+            final screenWidth = constraints.maxWidth;
+            final isSmallScreen = screenWidth < 400;
+            
+            return Text(
+              'İşleyiş',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+                fontSize: isSmallScreen ? 18 : 20,
+              ),
+            );
+          },
         ),
         backgroundColor: AppTheme.primaryColor,
         elevation: 0,
         actions: [
-          // Admin için performans butonu, normal kullanıcılar için yenile butonu
-          Consumer<AdminAuthService>(
-            builder: (context, authService, child) {
-              if (authService.isAdmin) {
-                return IconButton(
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => const PerformanceScreen(),
+          // Responsive Admin için performans butonu, normal kullanıcılar için yenile butonu
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final screenWidth = constraints.maxWidth;
+              final isSmallScreen = screenWidth < 400;
+              
+              return Consumer<AdminAuthService>(
+                builder: (context, authService, child) {
+                  if (authService.isAdmin) {
+                    return Hero(
+                      tag: 'performance_button',
+                      child: IconButton(
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const PerformanceScreen(),
+                            ),
+                          );
+                        },
+                        icon: Icon(
+                          Icons.analytics_rounded, 
+                          color: Colors.white,
+                          size: isSmallScreen ? 20 : 24,
+                        ),
+                        tooltip: 'Performans',
                       ),
                     );
-                  },
-                  icon: const Icon(Icons.analytics_rounded, color: Colors.white),
-                  tooltip: 'Performans',
-                );
-              } else {
-                return IconButton(
-                  onPressed: _loadTodayData,
-                  icon: const Icon(Icons.refresh_rounded, color: Colors.white),
-                  tooltip: 'Yenile',
-                );
-              }
+                  } else {
+                    return IconButton(
+                      onPressed: _loadTodayData,
+                      icon: Icon(
+                        Icons.refresh_rounded, 
+                        color: Colors.white,
+                        size: isSmallScreen ? 20 : 24,
+                      ),
+                      tooltip: 'Yenile',
+                    );
+                  }
+                },
+              );
             },
           ),
         ],

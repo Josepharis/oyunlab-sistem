@@ -1,6 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/services.dart';
+import 'dart:io';
 import '../models/customer_model.dart';
 
 /// Firebase veritabanı işlemlerini yöneten servis sınıfı.
@@ -9,12 +11,14 @@ import '../models/customer_model.dart';
 class FirebaseService {
   final FirebaseFirestore _firestore;
   final FirebaseAuth _auth;
+  final FirebaseStorage _storage;
   bool _isInitialized = false;
   bool _isOfflineMode = false;
 
   FirebaseService()
     : _firestore = FirebaseFirestore.instance,
-      _auth = FirebaseAuth.instance {
+      _auth = FirebaseAuth.instance,
+      _storage = FirebaseStorage.instance {
     _initFirebase();
   }
 
@@ -1041,6 +1045,60 @@ class FirebaseService {
       print('FIREBASE_SERVICE: Eksik başarıyla silindi');
     } catch (e) {
       print('FIREBASE_SERVICE: Eksik silinirken hata: $e');
+      rethrow;
+    }
+  }
+
+  /// Görev puanı ekle
+  Future<void> addTaskScore(Map<String, dynamic> taskScoreData) async {
+    try {
+      if (_isOfflineMode) {
+        print('FIREBASE_SERVICE: Çevrimdışı modda görev puanı eklenemez');
+        return;
+      }
+
+      if (_auth.currentUser == null) {
+        print('Görev puanı eklemek için kimlik doğrulaması gerekiyor');
+        return;
+      }
+
+      await _firestore.collection('taskScores').add(taskScoreData);
+      print('FIREBASE_SERVICE: Görev puanı başarıyla eklendi');
+    } catch (e) {
+      print('FIREBASE_SERVICE: Görev puanı eklenirken hata: $e');
+      rethrow;
+    }
+  }
+
+  /// Görev tamamlanma görselini Firebase Storage'a yükle
+  Future<String> uploadTaskImage(File imageFile, String taskId) async {
+    try {
+      if (_isOfflineMode) {
+        print('FIREBASE_SERVICE: Çevrimdışı modda görsel yüklenemez');
+        throw Exception('Çevrimdışı modda görsel yüklenemez');
+      }
+
+      if (_auth.currentUser == null) {
+        print('FIREBASE_SERVICE: Görsel yüklemek için kimlik doğrulaması gerekiyor');
+        throw Exception('Görsel yüklemek için kimlik doğrulaması gerekiyor');
+      }
+
+      // Benzersiz dosya adı oluştur
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final fileName = 'task_${taskId}_${timestamp}.jpg';
+      final ref = _storage.ref().child('task_images/$fileName');
+
+      // Görseli yükle
+      final uploadTask = ref.putFile(imageFile);
+      final snapshot = await uploadTask;
+      
+      // Download URL'ini al
+      final downloadUrl = await snapshot.ref.getDownloadURL();
+      
+      print('FIREBASE_SERVICE: Görev görseli başarıyla yüklendi: $downloadUrl');
+      return downloadUrl;
+    } catch (e) {
+      print('FIREBASE_SERVICE: Görev görseli yüklenirken hata: $e');
       rethrow;
     }
   }

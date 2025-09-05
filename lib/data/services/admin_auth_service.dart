@@ -10,16 +10,59 @@ class AdminAuthService extends ChangeNotifier {
   final FirebaseAuth _firebaseAuth = FirebaseAuth.instance;
 
   AdminAuthService() {
-    // Constructor'da auth state listener'ı başlat
+    // Constructor'da loading state'ini başlat
+    _isLoading = true;
+    // Auth state listener'ı başlat
     setupAuthStateListener();
-    // Mevcut kullanıcıyı kontrol et
-    checkCurrentUser();
+    // Mevcut kullanıcıyı hemen kontrol et (senkron olarak)
+    _initializeAuthSync();
+  }
+
+  // Auth durumunu senkron olarak başlat
+  void _initializeAuthSync() {
+    // Firebase Auth durumunu hemen kontrol et
+    final user = _firebaseAuth.currentUser;
+    if (user != null && user.email != null) {
+      print('Firebase Auth\'da kullanıcı bulundu: ${user.email}');
+      // Asenkron olarak admin bilgilerini yükle
+      _loadAdminUserAsync(user.email!);
+    } else {
+      print('Firebase Auth\'da kullanıcı bulunamadı');
+      _currentUser = null;
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  // Admin kullanıcı bilgilerini asenkron olarak yükle
+  Future<void> _loadAdminUserAsync(String email) async {
+    try {
+      final adminUser = await _adminUserRepository.getAdminUserByEmail(email);
+      if (adminUser != null && adminUser.isActive) {
+        _currentUser = adminUser;
+        await _adminUserRepository.updateLastLogin(adminUser.id);
+        _isLoading = false;
+        notifyListeners();
+        print('Mevcut admin kullanıcı oturumu bulundu: ${adminUser.email} (Role: ${adminUser.role})');
+        print('isAdmin: ${isAdmin}, isManager: ${isManager}, isStaff: ${isStaff}');
+      } else {
+        _currentUser = null;
+        _isLoading = false;
+        notifyListeners();
+        print('Normal kullanıcı oturumu bulundu: $email');
+      }
+    } catch (e) {
+      print('Admin kullanıcı yükleme hatası: $e');
+      _currentUser = null;
+      _isLoading = false;
+      notifyListeners();
+    }
   }
 
   // Getter'lar
   AdminUser? get currentUser => _currentUser;
   bool get isLoading => _isLoading;
-  bool get isLoggedIn => _firebaseAuth.currentUser != null; // Firebase Auth durumuna göre
+  bool get isLoggedIn => _firebaseAuth.currentUser != null && _currentUser != null; // Hem Firebase Auth hem de admin user olmalı
   bool get isAdmin => _currentUser?.isAdmin ?? false;
   bool get isManager => _currentUser?.isManager ?? false;
   bool get isStaff => _currentUser?.isStaff ?? false;
@@ -303,17 +346,22 @@ class AdminAuthService extends ChangeNotifier {
       
       if (user != null && user.email != null) {
         // Kullanıcı giriş yaptı - admin mi kontrol et
+        _isLoading = true;
+        notifyListeners();
+        
         try {
           final adminUser = await _adminUserRepository.getAdminUserByEmail(user.email!);
           if (adminUser != null && adminUser.isActive) {
             // Admin kullanıcı - Firestore'dan bilgileri al
             _currentUser = adminUser;
             await _adminUserRepository.updateLastLogin(adminUser.id);
+            _isLoading = false;
             notifyListeners();
             print('Admin kullanıcı oturumu başlatıldı: ${adminUser.email}');
           } else {
             // Normal kullanıcı - sadece Firebase Auth ile giriş yapıldı
             _currentUser = null; // Admin bilgisi yok
+            _isLoading = false;
             notifyListeners();
             print('Normal kullanıcı girişi: ${user.email}');
           }
@@ -321,11 +369,13 @@ class AdminAuthService extends ChangeNotifier {
           print('Auth state listener hatası: $e');
           // Hata durumunda da kullanıcı giriş yapmış sayılır
           _currentUser = null;
+          _isLoading = false;
           notifyListeners();
         }
       } else {
         // Kullanıcı çıkış yaptı
         _currentUser = null;
+        _isLoading = false;
         notifyListeners();
         print('Kullanıcı oturumu sonlandırıldı');
       }

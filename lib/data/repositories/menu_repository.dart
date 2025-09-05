@@ -133,6 +133,7 @@ class MenuRepository {
   // Test ürünleri oluştur
   List<ProductItem> _createTestProducts() {
     return [
+      // YİYECEKLER
       ProductItem(
         id: 'test_food_1',
         name: 'Patates Kızartması',
@@ -154,6 +155,7 @@ class MenuRepository {
         category: ProductCategory.food,
         stock: 25,
       ),
+      // İÇECEKLER
       ProductItem(
         id: 'test_drink_1',
         name: 'Su',
@@ -167,6 +169,64 @@ class MenuRepository {
         price: 20.0,
         category: ProductCategory.drink,
         stock: 75,
+      ),
+      // TATLILAR
+      ProductItem(
+        id: 'test_dessert_1',
+        name: 'Dondurma',
+        price: 15.0,
+        category: ProductCategory.dessert,
+        stock: 30,
+      ),
+      ProductItem(
+        id: 'test_dessert_2',
+        name: 'Çikolatalı Pasta',
+        price: 30.0,
+        category: ProductCategory.dessert,
+        stock: 15,
+      ),
+      // OYUNCAKLAR
+      ProductItem(
+        id: 'test_toy_1',
+        name: 'Küçük Oyuncak',
+        price: 30.0,
+        category: ProductCategory.toy,
+        stock: 25,
+      ),
+      ProductItem(
+        id: 'test_toy_2',
+        name: 'Peluş Oyuncak',
+        price: 50.0,
+        category: ProductCategory.toy,
+        stock: 20,
+      ),
+      ProductItem(
+        id: 'test_toy_3',
+        name: 'Araba',
+        price: 40.0,
+        category: ProductCategory.toy,
+        stock: 30,
+      ),
+      ProductItem(
+        id: 'test_toy_4',
+        name: 'Bebek',
+        price: 45.0,
+        category: ProductCategory.toy,
+        stock: 18,
+      ),
+      ProductItem(
+        id: 'test_toy_5',
+        name: 'Lego (Küçük Set)',
+        price: 70.0,
+        category: ProductCategory.toy,
+        stock: 15,
+      ),
+      ProductItem(
+        id: 'test_toy_6',
+        name: 'Balon',
+        price: 10.0,
+        category: ProductCategory.toy,
+        stock: 100,
       ),
     ];
   }

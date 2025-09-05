@@ -22,10 +22,37 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _rememberMe = false;
 
   @override
+  void initState() {
+    super.initState();
+    // Sayfa yüklendiğinde mevcut giriş durumunu kontrol et
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkAuthStatus();
+    });
+  }
+
+  @override
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
     super.dispose();
+  }
+
+  // Mevcut giriş durumunu kontrol et
+  void _checkAuthStatus() {
+    // Gecikme olmadan hemen kontrol et
+    if (mounted) {
+      final adminAuthService = Provider.of<AdminAuthService>(context, listen: false);
+      // Sadece gerçekten admin kullanıcısı varsa yönlendir
+      if (adminAuthService.isLoggedIn && adminAuthService.currentUser != null) {
+        // Zaten giriş yapılmış, ana sayfaya yönlendir
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (context) => const MainScreen(),
+          ),
+        );
+      }
+    }
   }
 
   // Giriş işlemi
@@ -386,46 +413,6 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
 
                 const SizedBox(height: 40),
-
-                // Demo Giriş Bilgileri (Geliştirme için)
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Colors.blue.shade50,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.blue.shade200),
-                  ),
-                  child: Column(
-                    children: [
-                      Row(
-                        children: [
-                          Icon(
-                            Icons.info_outline,
-                            color: Colors.blue.shade700,
-                            size: 20,
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            'Demo Giriş Bilgileri',
-                            style: TextStyle(
-                              color: Colors.blue.shade700,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 14,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'E-posta: demo@oyunlab.com\nŞifre: 123456',
-                        style: TextStyle(
-                          color: Colors.blue.shade700,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
               ],
             ),
           ),

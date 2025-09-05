@@ -5,6 +5,7 @@ import 'dart:ui';
 import '../../core/theme/app_theme.dart';
 import '../../data/models/order_model.dart';
 import '../../data/repositories/menu_repository.dart';
+import '../../data/services/storage_service.dart';
 
 class MenuManagementScreen extends StatefulWidget {
   const MenuManagementScreen({super.key});
@@ -48,34 +49,22 @@ class _MenuManagementScreenState extends State<MenuManagementScreen>
     // Menü öğelerini repository'den al
     _menuItems = List.from(_menuRepository.menuItems);
 
-    // Boş ise test verisi ekleyelim
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_menuItems.isEmpty) {
-        print("Menü listesi boş! Test ürünü ekleniyor...");
-        // Test için birkaç örnek ürün ekle
-        _menuItems.add(
-          ProductItem(
-            id: '', // Test ürünü için boş ID
-            name: "Test Ürünü 1",
-            price: 15.99,
-            category: ProductCategory.food,
-            description: "Test amaçlı eklenen örnek ürün",
-          ),
-        );
-        _menuItems.add(
-          ProductItem(
-            id: '', // Test ürünü için boş ID
-            name: "Test İçeceği",
-            price: 8.50,
-            category: ProductCategory.drink,
-            description: "Test amaçlı eklenen örnek içecek",
-          ),
-        );
-        // Repository'ye kaydet
-        _menuRepository.saveMenuItems(_menuItems);
-        print("Test ürünleri eklendi ve kaydedildi: ${_menuItems.length} ürün");
-      } else {
-        print("Mevcut menü yüklendi: ${_menuItems.length} ürün");
+    // Menü öğelerini yükle
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      try {
+        await _menuRepository.loadMenuItems();
+        _menuItems = List.from(_menuRepository.menuItems);
+        
+        if (_menuItems.isEmpty) {
+          print("Menü listesi boş! Test ürünleri oluşturuluyor...");
+          await _menuRepository.createTestProducts();
+          _menuItems = List.from(_menuRepository.menuItems);
+          print("Test ürünleri oluşturuldu: ${_menuItems.length} ürün");
+        } else {
+          print("Mevcut menü yüklendi: ${_menuItems.length} ürün");
+        }
+      } catch (e) {
+        print("Menü yükleme hatası: $e");
       }
 
       // Yükleme durumunu kapat
@@ -114,21 +103,18 @@ class _MenuManagementScreenState extends State<MenuManagementScreen>
 
   // Kategoriye göre ürünleri filtrele
   List<ProductItem> _getFilteredProducts(ProductCategory category) {
-    if (_searchQuery.isEmpty) {
-      return _menuItems.where((item) => item.category == category).toList();
-    } else {
-      // Tüm kategorilerde arama yap
-      return _menuItems
-          .where(
-            (item) =>
-                (item.name.toLowerCase().contains(_searchQuery.toLowerCase()) ||
-                    (item.description
-                            ?.toLowerCase()
-                            .contains(_searchQuery.toLowerCase()) ??
-                        false)),
-          )
-          .toList();
-    }
+    return _searchQuery.isEmpty
+        ? _menuItems.where((item) => item.category == category).toList()
+        : _menuItems
+            .where(
+              (item) =>
+                  (item.name.toLowerCase().contains(_searchQuery.toLowerCase()) ||
+                      (item.description
+                              ?.toLowerCase()
+                              .contains(_searchQuery.toLowerCase()) ??
+                          false)),
+            )
+            .toList();
   }
 
   // Arama işlemini temizle
@@ -141,19 +127,82 @@ class _MenuManagementScreenState extends State<MenuManagementScreen>
     });
   }
 
-  // Görsel seçme işlemi
-  Future<void> _pickImage({Function? onComplete}) async {
+  // Görsel seçme ve Firebase Storage'a yükleme işlemi
+  Future<void> _pickImage({Function? onComplete, required String productId, required ProductCategory category}) async {
     try {
       final XFile? image = await _picker.pickImage(
         source: ImageSource.gallery,
         imageQuality: 90,
         maxWidth: 1200,
       );
+      
       if (image != null) {
+        final File imageFile = File(image.path);
+        
+        // Görsel formatını kontrol et
+        if (!StorageService.isValidImageFormat(image.path)) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Desteklenmeyen dosya formatı. Lütfen JPG, PNG veya WebP formatında bir görsel seçin.'),
+                backgroundColor: Colors.orange,
+                behavior: SnackBarBehavior.floating,
+              ),
+            );
+          }
+          return;
+        }
+        
+        // Görsel boyutunu kontrol et
+        final bool isValidSize = await StorageService.validateImageSize(imageFile);
+        if (!isValidSize) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Görsel çok büyük. Lütfen 5MB\'dan küçük bir görsel seçin.'),
+                backgroundColor: Colors.orange,
+                behavior: SnackBarBehavior.floating,
+              ),
+            );
+          }
+          return;
+        }
+        
         setState(() {
-          _selectedImage = File(image.path);
-          _imageUrl = image.path;
+          _selectedImage = imageFile;
         });
+
+        // Loading göster
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Görsel yükleniyor...'),
+              backgroundColor: Colors.blue,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+
+        // Firebase Storage'a yükle
+        final String downloadUrl = await StorageService.uploadCategoryImage(
+          imageFile: imageFile,
+          category: category.name,
+          productId: productId,
+        );
+
+        setState(() {
+          _imageUrl = downloadUrl;
+        });
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Görsel başarıyla yüklendi!'),
+              backgroundColor: Colors.green,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
 
         if (onComplete != null) {
           onComplete();
@@ -164,7 +213,7 @@ class _MenuManagementScreenState extends State<MenuManagementScreen>
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: const Text('Görsel seçilirken bir hata oluştu'),
+            content: Text('Görsel yüklenirken hata oluştu: $e'),
             backgroundColor: Colors.red.shade700,
             behavior: SnackBarBehavior.floating,
             shape:
@@ -176,7 +225,7 @@ class _MenuManagementScreenState extends State<MenuManagementScreen>
   }
 
   // Dialog için görsel yükleme işlemleri
-  Future<void> _pickImageForDialog(StateSetter setDialogState) async {
+  Future<void> _pickImageForDialog(StateSetter setDialogState, ProductCategory category, String productId) async {
     try {
       await showModalBottomSheet(
         context: context,
@@ -208,7 +257,7 @@ class _MenuManagementScreenState extends State<MenuManagementScreen>
                   InkWell(
                     onTap: () {
                       Navigator.pop(context);
-                      _getImageFromSource(ImageSource.camera, setDialogState);
+                      _getImageFromSource(ImageSource.camera, setDialogState, category, productId);
                     },
                     borderRadius: BorderRadius.circular(15),
                     child: Container(
@@ -221,8 +270,9 @@ class _MenuManagementScreenState extends State<MenuManagementScreen>
                         color: AppTheme.primaryColor.withOpacity(0.1),
                         borderRadius: BorderRadius.circular(15),
                       ),
-                      child: Column(
-                        children: [
+                          child: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
                           Icon(
                             Icons.camera_alt_rounded,
                             size: 40,
@@ -245,7 +295,7 @@ class _MenuManagementScreenState extends State<MenuManagementScreen>
                   InkWell(
                     onTap: () {
                       Navigator.pop(context);
-                      _getImageFromSource(ImageSource.gallery, setDialogState);
+                      _getImageFromSource(ImageSource.gallery, setDialogState, category, productId);
                     },
                     borderRadius: BorderRadius.circular(15),
                     child: Container(
@@ -258,8 +308,9 @@ class _MenuManagementScreenState extends State<MenuManagementScreen>
                         color: AppTheme.primaryColor.withOpacity(0.1),
                         borderRadius: BorderRadius.circular(15),
                       ),
-                      child: Column(
-                        children: [
+                          child: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
                           Icon(
                             Icons.photo_library_rounded,
                             size: 40,
@@ -302,9 +353,9 @@ class _MenuManagementScreenState extends State<MenuManagementScreen>
     }
   }
 
-  // Belirtilen kaynaktan görsel getirme
+  // Belirtilen kaynaktan görsel getirme ve Firebase Storage'a yükleme
   Future<void> _getImageFromSource(
-      ImageSource source, StateSetter setDialogState) async {
+      ImageSource source, StateSetter setDialogState, ProductCategory category, String productId) async {
     try {
       final XFile? image = await _picker.pickImage(
         source: source,
@@ -313,43 +364,73 @@ class _MenuManagementScreenState extends State<MenuManagementScreen>
       );
 
       if (image != null) {
+        final File imageFile = File(image.path);
+        
+        // Görsel formatını kontrol et
+        if (!StorageService.isValidImageFormat(image.path)) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Desteklenmeyen dosya formatı. Lütfen JPG, PNG veya WebP formatında bir görsel seçin.'),
+                backgroundColor: Colors.orange,
+                behavior: SnackBarBehavior.floating,
+              ),
+            );
+          }
+          return;
+        }
+        
+        // Görsel boyutunu kontrol et
+        final bool isValidSize = await StorageService.validateImageSize(imageFile);
+        if (!isValidSize) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Görsel çok büyük. Lütfen 5MB\'dan küçük bir görsel seçin.'),
+                backgroundColor: Colors.orange,
+                behavior: SnackBarBehavior.floating,
+              ),
+            );
+          }
+          return;
+        }
+
         // Yükleniyor göstergesi
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('Görsel yükleniyor...'),
-              duration: Duration(seconds: 1),
+              backgroundColor: Colors.blue,
+              behavior: SnackBarBehavior.floating,
             ),
           );
         }
 
-        final imagePath = image.path;
-        print("Seçilen görsel yolu: $imagePath");
-
         try {
-          final imageFile = File(imagePath);
-          if (await imageFile.exists()) {
-            setDialogState(() {
-              _selectedImage = imageFile;
-              _imageUrl = imagePath;
-            });
+          // Firebase Storage'a yükle
+          final String downloadUrl = await StorageService.uploadCategoryImage(
+            imageFile: imageFile,
+            category: category.name,
+            productId: productId,
+          );
 
-            if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Görsel başarıyla yüklendi'),
-                  backgroundColor: Colors.green,
-                  duration: Duration(seconds: 2),
-                ),
-              );
-            }
-          } else {
-            _showErrorSnackbar("Seçilen görsel dosyası bulunamadı");
+          setDialogState(() {
+            _selectedImage = imageFile;
+            _imageUrl = downloadUrl;
+          });
+
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Görsel başarıyla yüklendi!'),
+                backgroundColor: Colors.green,
+                behavior: SnackBarBehavior.floating,
+              ),
+            );
           }
-        } catch (fileError) {
-          print("Dosya işleme hatası: $fileError");
-          _showErrorSnackbar(
-              "Görsel dosyası işlenirken bir hata oluştu: ${fileError.toString()}");
+        } catch (uploadError) {
+          print("Firebase Storage yükleme hatası: $uploadError");
+          _showErrorSnackbar("Görsel yüklenirken hata oluştu: ${uploadError.toString()}");
         }
       }
     } catch (e) {
@@ -398,6 +479,11 @@ class _MenuManagementScreenState extends State<MenuManagementScreen>
         (isEditing
             ? productToEdit.category
             : ProductCategory.values[_selectedCategoryIndex]);
+
+    // ProductId oluştur (yeni ürün için)
+    final String productId = isEditing 
+        ? productToEdit.id 
+        : DateTime.now().millisecondsSinceEpoch.toString();
 
     // Düzenleme modunda mevcut görseli göster
     if (isEditing && productToEdit.imageUrl != null) {
@@ -534,9 +620,10 @@ class _MenuManagementScreenState extends State<MenuManagementScreen>
                             Expanded(
                               child: SingleChildScrollView(
                                 padding: const EdgeInsets.all(24),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
+                                              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
                                     // Ürün Adı
                                     const Text(
                                       'Ürün Adı',
@@ -835,7 +922,7 @@ class _MenuManagementScreenState extends State<MenuManagementScreen>
                                                 onTap: () {
                                                   // Doğrudan dialog için özel yükleme metodunu çağır
                                                   _pickImageForDialog(
-                                                      setDialogState);
+                                                      setDialogState, selectedCategory, productId);
                                                 },
                                                 borderRadius:
                                                     BorderRadius.circular(16),
@@ -1172,6 +1259,7 @@ class _MenuManagementScreenState extends State<MenuManagementScreen>
           }
         },
         child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
             Container(
               width: 40,
@@ -1240,7 +1328,7 @@ class _MenuManagementScreenState extends State<MenuManagementScreen>
     final stock = int.parse(stockText);
 
     final newProduct = ProductItem(
-      id: productToEdit?.id ?? '', // Mevcut ürün varsa ID'sini kullan, yoksa boş
+      id: productToEdit?.id ?? DateTime.now().millisecondsSinceEpoch.toString(), // Mevcut ürün varsa ID'sini kullan, yoksa yeni ID oluştur
       name: name,
       price: price,
       category: category,
@@ -1401,12 +1489,6 @@ class _MenuManagementScreenState extends State<MenuManagementScreen>
         return Icons.cake_rounded;
       case ProductCategory.toy:
         return Icons.toys_rounded;
-      case ProductCategory.game:
-        return Icons.sports_esports_rounded;
-      case ProductCategory.coding:
-        return Icons.code_rounded;
-      case ProductCategory.other:
-        return Icons.category_rounded;
     }
   }
 
@@ -1436,6 +1518,7 @@ class _MenuManagementScreenState extends State<MenuManagementScreen>
       backgroundColor: const Color(0xFFF8F9FA),
       body: SafeArea(
         child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
             // Başlık ve Arama Kısmı
             buildHeader(),
@@ -1495,6 +1578,7 @@ class _MenuManagementScreenState extends State<MenuManagementScreen>
       ),
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
           // Başlık satırı
           Row(
@@ -1727,9 +1811,10 @@ class _MenuManagementScreenState extends State<MenuManagementScreen>
   Widget buildProductGrid(List<ProductItem> products) {
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+                    child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
           // Bilgi satırı
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -1811,9 +1896,10 @@ class _MenuManagementScreenState extends State<MenuManagementScreen>
         clipBehavior: Clip.antiAlias,
         child: InkWell(
           onTap: () => _showAddProductDialog(product.category, product),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
+                        child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
               // Ürün görseli
               Hero(
                 tag: 'product_${product.name}',
@@ -1899,6 +1985,7 @@ class _MenuManagementScreenState extends State<MenuManagementScreen>
                 child: Padding(
                   padding: const EdgeInsets.all(12),
                   child: Column(
+                    mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       // Ürün adı
@@ -1916,16 +2003,14 @@ class _MenuManagementScreenState extends State<MenuManagementScreen>
                       // Ürün açıklaması
                       if (product.description != null) ...[
                         const SizedBox(height: 4),
-                        Flexible(
-                          child: Text(
-                            product.description!,
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.grey.shade600,
-                            ),
-                            maxLines: 3, // 2'den 3'e çıkarıldı
-                            overflow: TextOverflow.ellipsis,
+                        Text(
+                          product.description!,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey.shade600,
                           ),
+                          maxLines: 3, // 2'den 3'e çıkarıldı
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ],
 
@@ -1937,6 +2022,7 @@ class _MenuManagementScreenState extends State<MenuManagementScreen>
                           // Fiyat
                           Expanded(
                             child: Column(
+                              mainAxisSize: MainAxisSize.min,
                               children: [
                                 Text(
                                   'Fiyat',
@@ -1972,6 +2058,7 @@ class _MenuManagementScreenState extends State<MenuManagementScreen>
                           const SizedBox(width: 8),
                           // Stok
                           Column(
+                            mainAxisSize: MainAxisSize.min,
                             children: [
                               Text(
                                 'Stok',
@@ -2070,6 +2157,7 @@ class _MenuManagementScreenState extends State<MenuManagementScreen>
                 // Ürün bilgileri
                 Expanded(
                   child: Column(
+                    mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       // Kategori etiketi
@@ -2124,16 +2212,14 @@ class _MenuManagementScreenState extends State<MenuManagementScreen>
                       // Ürün açıklaması
                       if (product.description != null) ...[
                         const SizedBox(height: 4),
-                        Flexible(
-                          child: Text(
-                            product.description!,
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.grey.shade600,
-                            ),
-                            maxLines: 2, // 1'den 2'ye çıkarıldı
-                            overflow: TextOverflow.ellipsis,
+                        Text(
+                          product.description!,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey.shade600,
                           ),
+                          maxLines: 2, // 1'den 2'ye çıkarıldı
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ],
 
@@ -2148,6 +2234,7 @@ class _MenuManagementScreenState extends State<MenuManagementScreen>
                             children: [
                               // Fiyat
                               Column(
+                                mainAxisSize: MainAxisSize.min,
                                 children: [
                                   Text(
                                     'Fiyat',
@@ -2181,6 +2268,7 @@ class _MenuManagementScreenState extends State<MenuManagementScreen>
                               const SizedBox(width: 8),
                               // Stok
                               Column(
+                                mainAxisSize: MainAxisSize.min,
                                 children: [
                                   Text(
                                     'Stok',
@@ -2253,6 +2341,7 @@ class _MenuManagementScreenState extends State<MenuManagementScreen>
         physics: const BouncingScrollPhysics(),
         padding: const EdgeInsets.all(32),
         child: Column(
+          mainAxisSize: MainAxisSize.min,
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Container(
@@ -2348,6 +2437,7 @@ class _MenuManagementScreenState extends State<MenuManagementScreen>
   // Yüzen Eylem Butonu
   Widget buildFloatingActionButton() {
     return FloatingActionButton(
+      heroTag: 'menu_management_fab',
       onPressed: () =>
           _showAddProductDialog(ProductCategory.values[_selectedCategoryIndex]),
       backgroundColor: AppTheme.primaryColor,

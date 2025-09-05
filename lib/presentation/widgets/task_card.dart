@@ -1,18 +1,20 @@
 import 'package:flutter/material.dart';
 import '../../data/models/task_model.dart';
+import '../../data/models/staff_model.dart';
 import 'complete_task_dialog.dart';
-import 'complaint_dialog.dart';
 
 class TaskCard extends StatelessWidget {
   final Task task;
   final VoidCallback onTaskCompleted;
   final VoidCallback? onTaskDeleted;
+  final List<Staff>? allStaff;
 
   const TaskCard({
     super.key,
     required this.task,
     required this.onTaskCompleted,
     this.onTaskDeleted,
+    this.allStaff,
   });
 
   Color _getDifficultyColor(TaskDifficulty difficulty) {
@@ -139,7 +141,7 @@ class TaskCard extends StatelessWidget {
                   Icon(Icons.people, size: 16, color: Colors.grey[600]),
                   const SizedBox(width: 4),
                   Text(
-                    'Tamamlayan: ${task.completedByStaffIds.join(', ')}',
+                    'Tamamlayan: ${_getStaffNames(task.completedByStaffIds)}',
                     style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                   ),
                 ],
@@ -166,9 +168,9 @@ class TaskCard extends StatelessWidget {
               ),
             ],
             const SizedBox(height: 16),
-            Row(
-              children: [
-                if (task.status == TaskStatus.pending) ...[
+            if (task.status == TaskStatus.pending) ...[
+              Row(
+                children: [
                   Expanded(
                     child: ElevatedButton.icon(
                       onPressed: () => _showCompleteTaskDialog(context),
@@ -190,21 +192,8 @@ class TaskCard extends StatelessWidget {
                     ),
                   ),
                 ],
-                if (task.status == TaskStatus.completed) ...[
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: () => _showComplaintDialog(context),
-                      icon: const Icon(Icons.report_problem),
-                      label: const Text('Şikayet Et'),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.red,
-                        side: const BorderSide(color: Colors.red),
-                      ),
-                    ),
-                  ),
-                ],
-              ],
-            ),
+              ),
+            ],
           ],
         ),
       ),
@@ -213,6 +202,27 @@ class TaskCard extends StatelessWidget {
 
   String _formatDateTime(DateTime dateTime) {
     return '${dateTime.day}/${dateTime.month}/${dateTime.year} ${dateTime.hour}:${dateTime.minute.toString().padLeft(2, '0')}';
+  }
+
+  String _getStaffNames(List<String> staffIds) {
+    if (allStaff == null || allStaff!.isEmpty) {
+      return staffIds.join(', ');
+    }
+    
+    final staffNames = staffIds.map((staffId) {
+      final staff = allStaff!.firstWhere(
+        (s) => s.id == staffId,
+        orElse: () => Staff(
+          id: staffId,
+          name: 'Bilinmeyen Personel',
+          email: '',
+          createdAt: DateTime.now(),
+        ),
+      );
+      return staff.name;
+    }).toList();
+    
+    return staffNames.join(', ');
   }
 
   void _showCompleteTaskDialog(BuildContext context) {
@@ -225,12 +235,6 @@ class TaskCard extends StatelessWidget {
     );
   }
 
-  void _showComplaintDialog(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (context) => ComplaintDialog(taskId: task.id),
-    );
-  }
 
   void _showDeleteConfirmation(BuildContext context) {
     showDialog(

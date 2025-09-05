@@ -3,6 +3,10 @@ import 'package:image_picker/image_picker.dart';
 import 'dart:io';
 import '../../data/models/task_model.dart';
 import '../../data/models/staff_model.dart';
+import '../../data/repositories/admin_user_repository.dart';
+import '../../data/models/admin_user_model.dart';
+import '../../data/repositories/task_repository.dart';
+import '../../core/di/service_locator.dart';
 
 class CompleteTaskDialog extends StatefulWidget {
   final Task task;
@@ -28,40 +32,20 @@ class _CompleteTaskDialogState extends State<CompleteTaskDialog>
   late Animation<double> _fadeAnimation;
   late Animation<Offset> _slideAnimation;
   ScaffoldMessengerState? _scaffoldMessenger;
-
-  // Mock personel listesi
-  final List<Staff> _availableStaff = [
-    Staff(
-      id: 'staff_1',
-      name: 'Ahmet Yılmaz',
-      email: 'ahmet@oyunlab.com',
-      createdAt: DateTime.now(),
-    ),
-    Staff(
-      id: 'staff_2',
-      name: 'Fatma Demir',
-      email: 'fatma@oyunlab.com',
-      createdAt: DateTime.now(),
-    ),
-    Staff(
-      id: 'staff_3',
-      name: 'Mehmet Kaya',
-      email: 'mehmet@oyunlab.com',
-      createdAt: DateTime.now(),
-    ),
-    Staff(
-      id: 'staff_4',
-      name: 'Ayşe Özkan',
-      email: 'ayse@oyunlab.com',
-      createdAt: DateTime.now(),
-    ),
-  ];
+  late AdminUserRepository _adminUserRepository;
+  late TaskRepository _taskRepository;
+  List<Staff> _availableStaff = [];
+  bool _isLoadingStaff = true;
 
   final List<String> _selectedStaffIds = [];
 
   @override
   void initState() {
     super.initState();
+    _adminUserRepository = AdminUserRepository();
+    _taskRepository = ServiceLocator.locator<TaskRepository>();
+    _loadStaff();
+    
     _animationController = AnimationController(
       duration: const Duration(milliseconds: 300),
       vsync: this,
@@ -74,10 +58,53 @@ class _CompleteTaskDialogState extends State<CompleteTaskDialog>
       end: Offset.zero,
     ).animate(CurvedAnimation(parent: _animationController, curve: Curves.easeOutBack));
 
-    if (_availableStaff.isNotEmpty) {
-      _selectedStaffIds.add(_availableStaff.first.id);
-    }
     _animationController.forward();
+  }
+
+  Future<void> _loadStaff() async {
+    try {
+      setState(() {
+        _isLoadingStaff = true;
+      });
+      
+      // AdminUserRepository'den tüm kullanıcıları çek ve staff olanları filtrele
+      final allUsers = await _adminUserRepository.getAllAdminUsers();
+      
+      final staffList = allUsers
+          .where((user) => user.role == UserRole.staff)
+          .map((user) => Staff(
+                id: user.id,
+                name: user.name,
+                email: user.email,
+                position: user.role.name,
+                createdAt: user.createdAt,
+              ))
+          .toList();
+      
+      if (mounted) {
+        setState(() {
+          _availableStaff = staffList;
+          _isLoadingStaff = false;
+          
+          // İlk personeli otomatik seç
+          if (_availableStaff.isNotEmpty) {
+            _selectedStaffIds.add(_availableStaff.first.id);
+          }
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoadingStaff = false;
+        });
+        _scaffoldMessenger?.showSnackBar(
+          SnackBar(
+            content: Text('Personel listesi yüklenirken hata: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   @override
@@ -293,7 +320,11 @@ class _CompleteTaskDialogState extends State<CompleteTaskDialog>
                           ),
                         ),
                         Text(
-                          _availableStaff.first.name,
+                          _isLoadingStaff 
+                            ? 'Yükleniyor...' 
+                            : _availableStaff.isNotEmpty 
+                              ? _availableStaff.first.name 
+                              : 'Personel bulunamadı',
                           style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.bold,
@@ -371,7 +402,25 @@ class _CompleteTaskDialogState extends State<CompleteTaskDialog>
                                   ),
                                 ),
                                 const SizedBox(height: 8),
-                                ..._availableStaff.skip(1).map((staff) => _buildStaffTile(staff)),
+                                if (_isLoadingStaff)
+                                  const Center(
+                                    child: Padding(
+                                      padding: EdgeInsets.all(16),
+                                      child: CircularProgressIndicator(),
+                                    ),
+                                  )
+                                else if (_availableStaff.isEmpty)
+                                  const Center(
+                                    child: Padding(
+                                      padding: EdgeInsets.all(16),
+                                      child: Text(
+                                        'Personel bulunamadı',
+                                        style: TextStyle(color: Colors.grey),
+                                      ),
+                                    ),
+                                  )
+                                else
+                                  ..._availableStaff.skip(1).map((staff) => _buildStaffTile(staff)),
                               ],
                             ),
                           ),
@@ -437,7 +486,7 @@ class _CompleteTaskDialogState extends State<CompleteTaskDialog>
                       ),
                     ),
                     Text(
-                      'Personel',
+                      staff.position ?? 'Personel',
                       style: TextStyle(
                         fontSize: 12,
                         color: isSelected ? Colors.blue[600] : Colors.grey[600],
@@ -760,12 +809,18 @@ class _CompleteTaskDialogState extends State<CompleteTaskDialog>
     });
 
     try {
-      // TODO: Görseli Firebase Storage'a yükle ve URL'ini al
-      // TODO: TaskRepository ile görevi tamamla
-      // await taskRepository.completeTask(widget.task.id, _selectedStaffIds, imageUrl);
-
-      // Geçici olarak başarı mesajı gösteriyoruz
-      await Future.delayed(const Duration(seconds: 1));
+      // Görseli Firebase Storage'a yükle ve URL'ini al
+      String? imageUrl = null;
+      if (_selectedImage != null) {
+        imageUrl = await _taskRepository.uploadTaskImage(_selectedImage!, widget.task.id);
+      }
+      
+      // TaskRepository ile görevi tamamla
+      await _taskRepository.completeTask(
+        widget.task.id, 
+        _selectedStaffIds, 
+        imageUrl
+      );
 
       if (mounted) {
         Navigator.of(context).pop();

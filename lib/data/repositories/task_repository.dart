@@ -1,5 +1,7 @@
 import 'package:uuid/uuid.dart';
+import 'dart:io';
 import '../models/task_model.dart';
+import '../models/task_score_model.dart';
 import '../services/firebase_service.dart';
 
 class TaskRepository {
@@ -124,10 +126,87 @@ class TaskRepository {
         );
 
         await updateTask(updatedTask);
+        
+        // Görev puanlarını hesapla ve kaydet
+        await _calculateAndSaveTaskScores(updatedTask);
+        
         print('TASK_REPO: Görev başarıyla tamamlandı: ${task.title}');
       }
     } catch (e) {
       print('TASK_REPO: Görev tamamlanırken hata: $e');
+      rethrow;
+    }
+  }
+
+  /// Görev tamamlanma görselini yükle
+  Future<String> uploadTaskImage(File imageFile, String taskId) async {
+    try {
+      if (_isOfflineMode) {
+        print('TASK_REPO: Çevrimdışı modda görsel yüklenemez');
+        throw Exception('Çevrimdışı modda görsel yüklenemez');
+      }
+
+      return await _firebaseService.uploadTaskImage(imageFile, taskId);
+    } catch (e) {
+      print('TASK_REPO: Görev görseli yüklenirken hata: $e');
+      rethrow;
+    }
+  }
+
+  /// Görev puanlarını hesapla ve kaydet
+  Future<void> _calculateAndSaveTaskScores(Task task) async {
+    try {
+      if (task.completedByStaffIds.isEmpty) {
+        print('TASK_REPO: Tamamlayan personel yok, puan hesaplanmayacak');
+        return;
+      }
+
+      // Görev zorluğuna göre temel puan belirle
+      double baseScore;
+      switch (task.difficulty) {
+        case TaskDifficulty.easy:
+          baseScore = 1.0;
+          break;
+        case TaskDifficulty.medium:
+          baseScore = 2.0;
+          break;
+        case TaskDifficulty.hard:
+          baseScore = 3.0;
+          break;
+      }
+
+      // Görevi tamamlayan kişi sayısına eşit olarak böl
+      final completedByCount = task.completedByStaffIds.length;
+      final scorePerPerson = baseScore / completedByCount;
+
+      print('TASK_REPO: Görev puanı hesaplanıyor - Temel puan: $baseScore, Kişi sayısı: $completedByCount, Kişi başına: ${scorePerPerson.toStringAsFixed(2)}');
+
+      // Her tamamlayan kişiye eşit pay ver
+      for (final staffId in task.completedByStaffIds) {
+        final taskScore = TaskScore.create(
+          taskId: task.id,
+          staffId: staffId,
+          score: scorePerPerson, // Eşit pay
+        );
+
+        await _saveTaskScore(taskScore);
+        print('TASK_REPO: Personel $staffId için puan kaydedildi: ${scorePerPerson.toStringAsFixed(2)}');
+      }
+    } catch (e) {
+      print('TASK_REPO: Görev puanları hesaplanırken hata: $e');
+    }
+  }
+
+  /// Görev puanını kaydet
+  Future<void> _saveTaskScore(TaskScore taskScore) async {
+    try {
+      final taskScoreWithId = taskScore.copyWith(id: _uuid.v4());
+      final json = taskScoreWithId.toJson();
+      
+      await _firebaseService.addTaskScore(json);
+      print('TASK_REPO: Görev puanı kaydedildi: ${taskScore.staffId} - ${taskScore.score}');
+    } catch (e) {
+      print('TASK_REPO: Görev puanı kaydedilirken hata: $e');
       rethrow;
     }
   }

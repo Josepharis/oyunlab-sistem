@@ -29,7 +29,7 @@ class NewCustomerForm extends StatefulWidget {
 }
 
 class _NewCustomerFormState extends State<NewCustomerForm>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   final _formKey = GlobalKey<FormState>();
   final _childNameController = TextEditingController();
   final _parentNameController = TextEditingController();
@@ -40,6 +40,7 @@ class _NewCustomerFormState extends State<NewCustomerForm>
   bool _isLoading = false;
   late AnimationController _animationController;
   late Animation<double> _animation;
+  late TabController _tabController;
 
   // Repository referansları
   late CustomerRepository _customerRepository;
@@ -60,6 +61,21 @@ class _NewCustomerFormState extends State<NewCustomerForm>
   bool _isPhoneFound = false;
   Customer? _foundCustomer;
   bool _isUsingRemainingTime = false;
+
+  // Diğerleri tab için değişkenler
+  String? _selectedCategory;
+  final _othersChildNameController = TextEditingController();
+  final _othersParentNameController = TextEditingController();
+  final _othersAmountController = TextEditingController();
+  bool _isOthersLoading = false;
+
+  // İndirim sistemi için değişkenler
+  String? _selectedDiscountType;
+  static const Map<String, double> _discountRates = {
+    'Protokol': 0.15, // %15 indirim
+    'Özel Çocuk': 1.0, // %100 indirim (ücretsiz)
+    'Özel Gün': 0.0, // Şimdilik indirim yok
+  };
 
   @override
   void initState() {
@@ -99,6 +115,8 @@ class _NewCustomerFormState extends State<NewCustomerForm>
     _animation = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(parent: _animationController, curve: Curves.easeOutCubic),
     );
+
+    _tabController = TabController(length: 2, vsync: this);
 
     _animationController.forward();
   }
@@ -171,7 +189,11 @@ class _NewCustomerFormState extends State<NewCustomerForm>
     _parentNameController.dispose();
     _phoneController.dispose();
     _ticketNumberController.dispose();
+    _othersChildNameController.dispose();
+    _othersParentNameController.dispose();
+    _othersAmountController.dispose();
     _animationController.dispose();
+    _tabController.dispose();
     super.dispose();
   }
 
@@ -195,14 +217,6 @@ class _NewCustomerFormState extends State<NewCustomerForm>
         setState(() {
           _isLoading = false;
         });
-
-        // Bildirim göster
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Lütfen çocuk ve ebeveyn adını giriniz.'),
-            backgroundColor: Colors.orange,
-          ),
-        );
         return;
       }
 
@@ -214,14 +228,6 @@ class _NewCustomerFormState extends State<NewCustomerForm>
         setState(() {
           _isLoading = false;
         });
-
-        // Bildirim göster
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Lütfen bir süre belirleyin.'),
-            backgroundColor: Colors.red,
-          ),
-        );
         return;
       }
 
@@ -233,14 +239,6 @@ class _NewCustomerFormState extends State<NewCustomerForm>
       setState(() {
         _isLoading = false;
       });
-
-      // Hata mesajı göster
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Kayıt sırasında bir hata oluştu'),
-          backgroundColor: Colors.red,
-        ),
-      );
     }
   }
 
@@ -289,7 +287,7 @@ class _NewCustomerFormState extends State<NewCustomerForm>
         pausedSeconds: 0, // Yeni müşteri için 0
         remainingMinutes: totalSeconds ~/ 60, // İlk statik kalan süre = toplam süre
         remainingSeconds: totalSeconds % 60, // İlk statik kalan süre saniye
-        price: _isUsingRemainingTime && _selectedDuration == 0 ? 0.0 : (_selectedDurationPrice?.price ?? 0.0),
+        price: _calculateFinalPrice(),
         childCount: 1, // Yeni müşteri için 1 çocuk
         siblingIds: [], // Yeni müşteri için boş liste
         hasTimePurchase: !(_isUsingRemainingTime && _selectedDuration == 0), // Sadece kalan süre kullanılmıyorsa satın alma var
@@ -309,17 +307,6 @@ class _NewCustomerFormState extends State<NewCustomerForm>
         _isLoading = false;
       });
 
-      // Başarı mesajı göster
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Kayıt başarıyla eklendi. Bilet No: $ticketNumber',
-            style: TextStyle(color: Colors.white),
-          ),
-          backgroundColor: Colors.green,
-          duration: Duration(seconds: 2),
-        ),
-      );
 
       print('NEW_CUSTOMER_FORM: Kayıt tamamlandı, bilet numarası: $ticketNumber');
     } catch (e) {
@@ -327,15 +314,6 @@ class _NewCustomerFormState extends State<NewCustomerForm>
       setState(() {
         _isLoading = false;
       });
-
-      // Hata mesajı göster
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Kayıt sırasında hata: $e'),
-          backgroundColor: Colors.red,
-          duration: Duration(seconds: 3),
-        ),
-      );
 
       rethrow;
     }
@@ -347,12 +325,6 @@ class _NewCustomerFormState extends State<NewCustomerForm>
     // Telefon alanının boş olup olmadığını kontrol et
     final phoneText = _phoneController.text.trim();
     if (phoneText.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Lütfen bir telefon numarası girin'),
-          backgroundColor: Colors.orange,
-        ),
-      );
       return;
     }
 
@@ -445,38 +417,17 @@ class _NewCustomerFormState extends State<NewCustomerForm>
 
         // YENİ SİSTEM - Kalan süre hesaplama
         final currentRemainingSeconds = latestCustomer.currentRemainingSeconds;
-        final currentRemainingMinutes = currentRemainingSeconds ~/ 60;
         
         // Eğer currentRemainingSeconds > 0 ise müşterinin kalan süresi var
         if (currentRemainingSeconds > 0) {
           _isUsingRemainingTime = true;
           _selectedDuration = 0; // Varsayılan olarak sadece kalan süreyi kullan
-
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                '${latestCustomer.childName} için kalan süre: $currentRemainingMinutes dk',
-              ),
-              backgroundColor: Colors.green,
-              duration: const Duration(seconds: 2),
-            ),
-          );
         } else {
           // Kalan süre yoksa, süre eklemeyi zorunlu yap
           _isUsingRemainingTime = false;
           if (_selectedDuration == 0) {
             _selectedDuration = 60; // Varsayılan süre
           }
-
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                '${latestCustomer.childName} bilgileri dolduruldu. Süre eklemeniz gerekiyor.',
-              ),
-              backgroundColor: Colors.orange,
-              duration: const Duration(seconds: 2),
-            ),
-          );
         }
       });
     } catch (e) {
@@ -488,13 +439,6 @@ class _NewCustomerFormState extends State<NewCustomerForm>
       setState(() {
         _isSearchingPhone = false;
       });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Arama sırasında hata oluştu: ${e.toString()}'),
-          backgroundColor: Colors.red,
-        ),
-      );
     }
   }
 
@@ -503,47 +447,417 @@ class _NewCustomerFormState extends State<NewCustomerForm>
     return phone.replaceAll(RegExp(r'[^0-9]'), '');
   }
 
+  // İndirim tipine göre süre seçeneklerini filtrele
+  List<DurationPrice> _getFilteredDurations() {
+    if (_selectedDiscountType == 'Özel Çocuk') {
+      // Özel Çocuk için sadece 1 saat (60 dakika) seçeneği
+      return _availableDurations.where((dp) => dp.duration == 60).toList();
+    }
+    // Diğer durumlarda tüm seçenekleri göster
+    return _availableDurations;
+  }
+
+  // İndirim hesaplaması ile final fiyatı hesapla
+  double _calculateFinalPrice() {
+    // Kalan süre kullanılıyorsa ve yeni süre eklenmiyorsa ücretsiz
+    if (_isUsingRemainingTime && _selectedDuration == 0) {
+      return 0.0;
+    }
+    
+    // Seçilen süre fiyatı yoksa 0 döndür
+    if (_selectedDurationPrice == null) {
+      return 0.0;
+    }
+    
+    // İndirim hesaplama
+    final discountRate = _discountRates[_selectedDiscountType] ?? 0.0;
+    final originalPrice = _selectedDurationPrice!.price;
+    final discountedPrice = originalPrice * (1 - discountRate);
+    
+    return discountedPrice;
+  }
+
   @override
   Widget build(BuildContext context) {
     return FadeTransition(
       opacity: _animation,
-      child: SingleChildScrollView(
-        physics: const BouncingScrollPhysics(),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14.0, vertical: 10.0),
-          child: Form(
-            key: _formKey,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-
-
-                // Kişisel Bilgiler Kartı
-                _buildPersonalInfoCard(),
-
-                const SizedBox(height: 14),
-
-                // Süre Seçimi Kartı
-                _buildDurationCard(),
-
-                const SizedBox(height: 12),
-
-                // Ödenecek Tutar Bilgisi
-                if (_selectedDurationPrice != null || (_isUsingRemainingTime && _selectedDuration == 0)) _buildPaymentInfoCard(),
-
-                const SizedBox(height: 12),
-
-                // Kaydet Butonu
-                _buildSaveButton(),
+      child: Column(
+        children: [
+          // Tab Bar - Minimal
+          Container(
+            margin: const EdgeInsets.symmetric(horizontal: 14.0, vertical: 4.0),
+            decoration: BoxDecoration(
+              color: Colors.grey.shade50,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: TabBar(
+              controller: _tabController,
+              indicator: BoxDecoration(
+                color: AppTheme.primaryColor,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              labelColor: Colors.white,
+              unselectedLabelColor: Colors.grey.shade600,
+              labelStyle: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+              ),
+              unselectedLabelStyle: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+              ),
+              indicatorSize: TabBarIndicatorSize.tab,
+              indicatorPadding: const EdgeInsets.all(2),
+              tabAlignment: TabAlignment.fill,
+              tabs: const [
+                Tab(text: 'Yeni Kayıt'),
+                Tab(text: 'Diğerleri'),
               ],
             ),
+          ),
+          
+          // Tab Bar View
+          Expanded(
+            child: TabBarView(
+              controller: _tabController,
+              children: [
+                // Yeni Kayıt Tab
+                _buildNewCustomerTab(),
+                
+                // Diğerleri Tab
+                _buildOthersTab(),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+
+
+  // Yeni Kayıt Tab İçeriği
+  Widget _buildNewCustomerTab() {
+    return SingleChildScrollView(
+      physics: const BouncingScrollPhysics(),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14.0, vertical: 10.0),
+        child: Form(
+          key: _formKey,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Kişisel Bilgiler Kartı
+              _buildPersonalInfoCard(),
+
+              const SizedBox(height: 14),
+
+              // Süre Seçimi Kartı
+              _buildDurationCard(),
+
+              const SizedBox(height: 12),
+
+              // Ödenecek Tutar Bilgisi
+              if (_selectedDurationPrice != null || (_isUsingRemainingTime && _selectedDuration == 0)) _buildPaymentInfoCard(),
+
+              const SizedBox(height: 12),
+
+              // Kaydet Butonu
+              _buildSaveButton(),
+            ],
           ),
         ),
       ),
     );
   }
 
+  // Diğerleri Tab İçeriği
+  Widget _buildOthersTab() {
+    return SingleChildScrollView(
+      physics: const BouncingScrollPhysics(),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14.0, vertical: 10.0),
+        child: Form(
+          key: GlobalKey<FormState>(),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Kategori Seçimi Kartı
+              _buildCategorySelectionCard(),
+              
+              const SizedBox(height: 14),
+              
+              // Kişisel Bilgiler Kartı
+              _buildOthersPersonalInfoCard(),
+              
+              const SizedBox(height: 14),
+              
+              // Tutar Bilgisi Kartı
+              _buildOthersAmountCard(),
+              
+              const SizedBox(height: 12),
+              
+              // Kaydet Butonu
+              _buildOthersSaveButton(),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
+  // Kategori Seçimi Kartı
+  Widget _buildCategorySelectionCard() {
+    return Card(
+      margin: EdgeInsets.zero,
+      elevation: 0,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      color: Colors.white,
+      surfaceTintColor: Colors.white,
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Başlık
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: AppTheme.primaryColor.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(
+                    Icons.category_rounded,
+                    color: AppTheme.primaryColor,
+                    size: 20,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                const Text(
+                  'Kategori Seçimi',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            
+            // Dropdown
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade50,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: Colors.grey.shade300),
+              ),
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<String>(
+                  value: _selectedCategory,
+                  hint: const Text(
+                    'Kategori seçiniz',
+                    style: TextStyle(color: Colors.grey),
+                  ),
+                  isExpanded: true,
+                  icon: Icon(Icons.keyboard_arrow_down, color: AppTheme.primaryColor),
+                  items: const [
+                    DropdownMenuItem(
+                      value: 'Oyun Grubu',
+                      child: Text('Oyun Grubu'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'Robotik + Kodlama',
+                      child: Text('Robotik + Kodlama'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'Workshop',
+                      child: Text('Workshop'),
+                    ),
+                  ],
+                  onChanged: (String? newValue) {
+                    setState(() {
+                      _selectedCategory = newValue;
+                    });
+                  },
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Diğerleri Kişisel Bilgiler Kartı
+  Widget _buildOthersPersonalInfoCard() {
+    return Card(
+      margin: EdgeInsets.zero,
+      elevation: 0,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      color: Colors.white,
+      surfaceTintColor: Colors.white,
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Başlık
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: AppTheme.primaryColor.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(
+                    Icons.person_rounded,
+                    color: AppTheme.primaryColor,
+                    size: 20,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                const Text(
+                  'Kişi Bilgileri',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+
+            // Form Alanları
+            _buildInputField(
+              controller: _othersChildNameController,
+              label: 'Çocuk Adı',
+              icon: Icons.child_care_rounded,
+              validator: (value) {
+                if (value == null || value.trim().isEmpty) {
+                  return 'Çocuk adını giriniz';
+                }
+                return null;
+              },
+            ),
+            const SizedBox(height: 12),
+
+            _buildInputField(
+              controller: _othersParentNameController,
+              label: 'Ebeveyn Adı',
+              icon: Icons.person_outline,
+              validator: (value) {
+                if (value == null || value.trim().isEmpty) {
+                  return 'Ebeveyn adını giriniz';
+                }
+                return null;
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Diğerleri Tutar Kartı
+  Widget _buildOthersAmountCard() {
+    return Card(
+      margin: EdgeInsets.zero,
+      elevation: 0,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      color: Colors.green.shade50,
+      surfaceTintColor: Colors.green.shade50,
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Başlık
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.green.shade100,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(
+                    Icons.payment_rounded,
+                    color: Colors.green.shade700,
+                    size: 20,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  'Tutar Bilgisi',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.green.shade700,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+
+            // Tutar Girişi
+            _buildInputField(
+              controller: _othersAmountController,
+              label: 'Tutar (₺)',
+              icon: Icons.attach_money_rounded,
+              keyboardType: TextInputType.number,
+              inputFormatters: [
+                FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
+              ],
+              validator: (value) {
+                if (value == null || value.trim().isEmpty) {
+                  return 'Tutar giriniz';
+                }
+                final amount = double.tryParse(value.replaceAll(',', '.'));
+                if (amount == null || amount <= 0) {
+                  return 'Geçerli bir tutar giriniz';
+                }
+                return null;
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Diğerleri Kaydet Butonu
+  Widget _buildOthersSaveButton() {
+    return SizedBox(
+      width: double.infinity,
+      height: 56,
+      child: ElevatedButton.icon(
+        onPressed: _isOthersLoading ? null : _saveOthers,
+        icon: _isOthersLoading
+            ? Container(
+                width: 20,
+                height: 20,
+                padding: const EdgeInsets.all(2),
+                child: const CircularProgressIndicator(
+                  color: Colors.white,
+                  strokeWidth: 2,
+                ),
+              )
+            : const Icon(Icons.check_rounded, size: 22),
+        label: Text(
+          _isOthersLoading ? 'Kaydediliyor...' : 'Kaydı Tamamla',
+          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+        ),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: AppTheme.primaryColor,
+          foregroundColor: Colors.white,
+          elevation: 4,
+          shadowColor: AppTheme.primaryColor.withOpacity(0.4),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+        ),
+      ),
+    );
+  }
 
   Widget _buildPersonalInfoCard() {
     return Card(
@@ -944,6 +1258,289 @@ class _NewCustomerFormState extends State<NewCustomerForm>
 
                 const Spacer(),
 
+                // İndirim Dropdown - Modern ve Responsive
+                Container(
+                  height: 36,
+                  constraints: const BoxConstraints(minWidth: 100, maxWidth: 120),
+                  decoration: BoxDecoration(
+                    gradient: _selectedDiscountType != null
+                        ? LinearGradient(
+                            colors: [
+                              AppTheme.primaryColor.withOpacity(0.1),
+                              AppTheme.primaryColor.withOpacity(0.05),
+                            ],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          )
+                        : null,
+                    color: _selectedDiscountType == null ? Colors.grey.shade50 : null,
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(
+                      color: _selectedDiscountType != null
+                          ? AppTheme.primaryColor.withOpacity(0.3)
+                          : Colors.grey.shade300,
+                      width: 1.5,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: _selectedDiscountType != null
+                            ? AppTheme.primaryColor.withOpacity(0.1)
+                            : Colors.black.withOpacity(0.03),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(18),
+                      onTap: () {
+                        // Dropdown açma işlemi için setState
+                        setState(() {});
+                      },
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        child: DropdownButtonHideUnderline(
+                          child: DropdownButton<String>(
+                            value: _selectedDiscountType,
+                            hint: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.local_offer_outlined,
+                                  size: 14,
+                                  color: Colors.grey.shade600,
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  'İndirim',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: Colors.grey.shade600,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            selectedItemBuilder: (BuildContext context) {
+                              return [
+                                // İndirim Yok seçeneği
+                                Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Container(
+                                      width: 6,
+                                      height: 6,
+                                      decoration: BoxDecoration(
+                                        color: Colors.grey.shade400,
+                                        shape: BoxShape.circle,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      'İndirim Yok',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: Colors.grey.shade600,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                // Protokol seçeneği
+                                Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Container(
+                                      width: 6,
+                                      height: 6,
+                                      decoration: BoxDecoration(
+                                        color: Colors.orange.shade500,
+                                        shape: BoxShape.circle,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      'Protokol',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: AppTheme.primaryColor,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                // Özel Çocuk seçeneği
+                                Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Container(
+                                      width: 6,
+                                      height: 6,
+                                      decoration: BoxDecoration(
+                                        color: Colors.blue.shade500,
+                                        shape: BoxShape.circle,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      'Özel Çocuk',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: AppTheme.primaryColor,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                // Özel Gün seçeneği
+                                Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Container(
+                                      width: 6,
+                                      height: 6,
+                                      decoration: BoxDecoration(
+                                        color: Colors.purple.shade500,
+                                        shape: BoxShape.circle,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      'Özel Gün',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: AppTheme.primaryColor,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ];
+                            },
+                            isExpanded: false,
+                            icon: Icon(
+                              Icons.keyboard_arrow_down_rounded,
+                              color: _selectedDiscountType != null
+                                  ? AppTheme.primaryColor
+                                  : Colors.grey.shade500,
+                              size: 16,
+                            ),
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: AppTheme.primaryColor,
+                              fontWeight: FontWeight.w600,
+                            ),
+                            dropdownColor: Colors.white,
+                            borderRadius: BorderRadius.circular(12),
+                            elevation: 8,
+                            items: [
+                              DropdownMenuItem(
+                                value: null, // İndirim yok
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Container(
+                                      width: 6,
+                                      height: 6,
+                                      decoration: BoxDecoration(
+                                        color: Colors.grey.shade400,
+                                        shape: BoxShape.circle,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    const Text('İndirim Yok'),
+                                  ],
+                                ),
+                              ),
+                              DropdownMenuItem(
+                                value: 'Protokol',
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Container(
+                                      width: 6,
+                                      height: 6,
+                                      decoration: BoxDecoration(
+                                        color: Colors.orange.shade500,
+                                        shape: BoxShape.circle,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    const Text('Protokol'),
+                                  ],
+                                ),
+                              ),
+                              DropdownMenuItem(
+                                value: 'Özel Çocuk',
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Container(
+                                      width: 6,
+                                      height: 6,
+                                      decoration: BoxDecoration(
+                                        color: Colors.blue.shade500,
+                                        shape: BoxShape.circle,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    const Text('Özel Çocuk'),
+                                  ],
+                                ),
+                              ),
+                              DropdownMenuItem(
+                                value: 'Özel Gün',
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Container(
+                                      width: 6,
+                                      height: 6,
+                                      decoration: BoxDecoration(
+                                        color: Colors.purple.shade500,
+                                        shape: BoxShape.circle,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    const Text('Özel Gün'),
+                                  ],
+                                ),
+                              ),
+                            ],
+                            onChanged: (String? newValue) {
+                              setState(() {
+                                _selectedDiscountType = newValue;
+                                
+                                if (newValue == null) {
+                                  // İndirim Yok seçildi - indirimi kaldır
+                                  _selectedDiscountType = null;
+                                } else if (newValue == 'Özel Çocuk') {
+                                  // Özel Çocuk seçildiyse sadece 1 saat seçeneğini göster
+                                  _selectedDuration = 60; // 1 saat
+                                  _selectedDurationPrice = _availableDurations.firstWhere(
+                                    (dp) => dp.duration == 60,
+                                    orElse: () => _availableDurations.first,
+                                  );
+                                } else {
+                                  // Diğer indirim türleri için normal süre seçeneklerini göster
+                                  if (_selectedDurationPrice == null && _availableDurations.isNotEmpty) {
+                                    _selectedDurationPrice = _availableDurations.first;
+                                    _selectedDuration = _selectedDurationPrice!.duration;
+                                  }
+                                }
+                              });
+                            },
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+
+                const SizedBox(width: 8),
+
                 // Süre gösterimi (sağ tarafta)
                 Container(
                   padding: const EdgeInsets.symmetric(
@@ -993,7 +1590,9 @@ class _NewCustomerFormState extends State<NewCustomerForm>
             if (_availableDurations.isNotEmpty) ...[
               const SizedBox(height: 8),
               Text(
-                'Mevcut Süre Seçenekleri',
+                _selectedDiscountType == 'Özel Çocuk' 
+                    ? 'Özel Çocuk - 1 Saat Ücretsiz'
+                    : 'Mevcut Süre Seçenekleri',
                 style: TextStyle(
                   fontSize: 13,
                   color: Colors.grey.shade600,
@@ -1004,8 +1603,11 @@ class _NewCustomerFormState extends State<NewCustomerForm>
               Wrap(
                 spacing: 6,
                 runSpacing: 6,
-                children: _availableDurations.map((durationPrice) {
+                children: _getFilteredDurations().map((durationPrice) {
                   final isSelected = _selectedDurationPrice?.duration == durationPrice.duration;
+                  final discountRate = _discountRates[_selectedDiscountType] ?? 0.0;
+                  final discountedPrice = durationPrice.price * (1 - discountRate);
+                  
                   return GestureDetector(
                     onTap: () {
                       setState(() {
@@ -1050,13 +1652,29 @@ class _NewCustomerFormState extends State<NewCustomerForm>
                             ),
                           ),
                           Text(
-                            '${durationPrice.price.toStringAsFixed(2)} ₺',
+                            discountedPrice == 0.0 
+                                ? 'Ücretsiz'
+                                : '${discountedPrice.toStringAsFixed(2)} ₺',
                             style: TextStyle(
                               fontSize: 11,
                               fontWeight: FontWeight.w500,
-                              color: isSelected ? Colors.white.withOpacity(0.8) : Colors.green.shade600,
+                              color: isSelected 
+                                  ? Colors.white.withOpacity(0.8) 
+                                  : (discountedPrice == 0.0 ? Colors.green.shade600 : Colors.green.shade600),
                             ),
                           ),
+                          // İndirim bilgisi göster
+                          if (discountRate > 0 && discountedPrice > 0)
+                            Text(
+                              'İndirim: %${(discountRate * 100).toInt()}',
+                              style: TextStyle(
+                                fontSize: 9,
+                                fontWeight: FontWeight.w500,
+                                color: isSelected 
+                                    ? Colors.white.withOpacity(0.7) 
+                                    : Colors.orange.shade600,
+                              ),
+                            ),
                         ],
                       ),
                     ),
@@ -1104,12 +1722,18 @@ class _NewCustomerFormState extends State<NewCustomerForm>
 
 
   Widget _buildPaymentInfoCard() {
+    // İndirim hesaplama
+    final discountRate = _discountRates[_selectedDiscountType] ?? 0.0;
+    final originalPrice = _selectedDurationPrice?.price ?? 0.0;
+    final discountedPrice = originalPrice * (1 - discountRate);
+    final isFree = discountedPrice == 0.0;
+    
     return Card(
       margin: EdgeInsets.zero,
       elevation: 0,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      color: Colors.green.shade50,
-      surfaceTintColor: Colors.green.shade50,
+      color: isFree ? Colors.blue.shade50 : Colors.green.shade50,
+      surfaceTintColor: isFree ? Colors.blue.shade50 : Colors.green.shade50,
       child: Padding(
         padding: const EdgeInsets.all(12),
         child: Row(
@@ -1117,12 +1741,12 @@ class _NewCustomerFormState extends State<NewCustomerForm>
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.green.shade100,
+                color: isFree ? Colors.blue.shade100 : Colors.green.shade100,
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Icon(
-                Icons.payment_rounded,
-                color: Colors.green.shade700,
+                isFree ? Icons.card_giftcard_rounded : Icons.payment_rounded,
+                color: isFree ? Colors.blue.shade700 : Colors.green.shade700,
                 size: 24,
               ),
             ),
@@ -1132,10 +1756,10 @@ class _NewCustomerFormState extends State<NewCustomerForm>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Ödenecek Tutar',
+                    isFree ? 'Ücretsiz' : 'Ödenecek Tutar',
                     style: TextStyle(
                       fontSize: 14,
-                      color: Colors.green.shade700,
+                      color: isFree ? Colors.blue.shade700 : Colors.green.shade700,
                       fontWeight: FontWeight.w500,
                     ),
                   ),
@@ -1143,11 +1767,13 @@ class _NewCustomerFormState extends State<NewCustomerForm>
                   Text(
                     _isUsingRemainingTime && _selectedDuration == 0 
                         ? '0.00 ₺' 
-                        : '${_selectedDurationPrice?.price.toStringAsFixed(2) ?? '0.00'} ₺',
+                        : isFree 
+                            ? 'Ücretsiz'
+                            : '${discountedPrice.toStringAsFixed(2)} ₺',
                     style: TextStyle(
                       fontSize: 24,
                       fontWeight: FontWeight.bold,
-                      color: Colors.green.shade800,
+                      color: isFree ? Colors.blue.shade800 : Colors.green.shade800,
                     ),
                   ),
                   Text(
@@ -1156,25 +1782,35 @@ class _NewCustomerFormState extends State<NewCustomerForm>
                         : '${_selectedDurationPrice?.duration ?? 0} dakika için',
                     style: TextStyle(
                       fontSize: 12,
-                      color: Colors.green.shade600,
+                      color: isFree ? Colors.blue.shade600 : Colors.green.shade600,
                     ),
                   ),
+                  // İndirim bilgisi
+                  if (discountRate > 0 && !isFree)
+                    Text(
+                      'İndirim: %${(discountRate * 100).toInt()} (${_selectedDiscountType})',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.orange.shade600,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
                 ],
               ),
             ),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               decoration: BoxDecoration(
-                color: Colors.green.shade100,
+                color: isFree ? Colors.blue.shade100 : Colors.green.shade100,
                 borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: Colors.green.shade300),
+                border: Border.all(color: isFree ? Colors.blue.shade300 : Colors.green.shade300),
               ),
               child: Text(
-                'Ödeme',
+                isFree ? 'Hediye' : 'Ödeme',
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
-                  color: Colors.green.shade700,
+                  color: isFree ? Colors.blue.shade700 : Colors.green.shade700,
                 ),
               ),
             ),
@@ -1308,6 +1944,96 @@ class _NewCustomerFormState extends State<NewCustomerForm>
 
 
 
+  // Diğerleri tab kayıt fonksiyonu
+  void _saveOthers() {
+    if (_selectedCategory == null) {
+      return;
+    }
+
+    if (_othersChildNameController.text.trim().isEmpty ||
+        _othersParentNameController.text.trim().isEmpty) {
+      return;
+    }
+
+    final amountText = _othersAmountController.text.trim();
+    if (amountText.isEmpty) {
+      return;
+    }
+
+    final amount = double.tryParse(amountText.replaceAll(',', '.'));
+    if (amount == null || amount <= 0) {
+      return;
+    }
+
+    if (_isOthersLoading) return;
+
+    setState(() {
+      _isOthersLoading = true;
+    });
+
+    _createOthersSaleRecord();
+  }
+
+  // Diğerleri satış kaydı oluştur (sadece profil satışlarına ekle)
+  Future<void> _createOthersSaleRecord() async {
+    try {
+      final firebaseUser = FirebaseAuth.instance.currentUser;
+      if (firebaseUser == null) return;
+
+      final amount = double.parse(_othersAmountController.text.replaceAll(',', '.'));
+      
+      final saleRecord = SaleRecord(
+        id: '', // Firestore otomatik oluşturacak
+        userId: firebaseUser.uid,
+        userName: firebaseUser.displayName ?? firebaseUser.email?.split('@')[0] ?? 'Kullanıcı',
+        customerName: _othersChildNameController.text.trim(),
+        amount: amount,
+        description: '$_selectedCategory - ${_othersParentNameController.text.trim()}',
+        date: DateTime.now(),
+        customerPhone: '', // Diğerleri için telefon zorunlu değil
+        customerEmail: null,
+        items: ['$_selectedCategory - ${_othersParentNameController.text.trim()}'],
+        paymentMethod: 'Nakit',
+        status: 'Tamamlandı',
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      );
+
+      final result = await _saleService.createSale(saleRecord);
+      if (result != null) {
+        // Kategori adını kaydet (form temizlenmeden önce)
+        final categoryName = _selectedCategory!;
+        final childName = _othersChildNameController.text.trim();
+        
+        print('✅ Diğerleri satış kaydı oluşturuldu: $childName');
+        print('   - Kategori: $categoryName');
+        print('   - Tutar: ${amount}₺');
+        print('   - Ebeveyn: ${_othersParentNameController.text.trim()}');
+        print('   - Satış ID: ${result.id}');
+        
+        // Formu temizle
+        setState(() {
+          _selectedCategory = null;
+          _othersChildNameController.clear();
+          _othersParentNameController.clear();
+          _othersAmountController.clear();
+          _isOthersLoading = false;
+        });
+
+      } else {
+        print('❌ Diğerleri satış kaydı oluşturulamadı');
+        setState(() {
+          _isOthersLoading = false;
+        });
+      }
+    } catch (e) {
+      print('Diğerleri satış kaydı oluşturulurken hata: $e');
+      setState(() {
+        _isOthersLoading = false;
+      });
+    }
+  }
+
   // Giriş ücreti satış kaydı oluştur
   Future<void> _createEntryFeeSaleRecord(Customer customer) async {
     try {
@@ -1324,11 +2050,15 @@ class _NewCustomerFormState extends State<NewCustomerForm>
         userName: firebaseUser.displayName ?? firebaseUser.email?.split('@')[0] ?? 'Kullanıcı',
         customerName: customer.childName,
         amount: entryFee,
-        description: 'Giriş Ücreti - ${customer.totalSeconds ~/ 60} dakika',
+        description: _selectedDiscountType != null 
+            ? 'Giriş Ücreti - ${customer.totalSeconds ~/ 60} dakika (${_selectedDiscountType})'
+            : 'Giriş Ücreti - ${customer.totalSeconds ~/ 60} dakika',
         date: DateTime.now(),
         customerPhone: customer.phoneNumber,
         customerEmail: null,
-        items: ['Giriş Ücreti - ${customer.totalSeconds ~/ 60} dakika'],
+        items: [_selectedDiscountType != null 
+            ? 'Giriş Ücreti - ${customer.totalSeconds ~/ 60} dakika (${_selectedDiscountType})'
+            : 'Giriş Ücreti - ${customer.totalSeconds ~/ 60} dakika'],
         paymentMethod: 'Nakit',
         status: 'Tamamlandı',
         createdAt: DateTime.now(),

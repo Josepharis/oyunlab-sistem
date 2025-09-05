@@ -20,11 +20,13 @@ import 'package:intl/intl.dart';
 class HomeScreen extends StatefulWidget {
   final CustomerRepository customerRepository;
   final VoidCallback? onDataCleared; // Callback ekle
+  final Function(int)? onGoToTable; // Masa ekranına gitme callback'i (masa numarası ile)
 
   const HomeScreen({
     super.key, 
     required this.customerRepository,
     this.onDataCleared,
+    this.onGoToTable,
   });
 
   @override
@@ -422,25 +424,8 @@ class _HomeScreenState extends State<HomeScreen>
       // Firebase'e ekle
       await _tableOrderRepository.addTable(newTable);
 
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('$customerName için manuel masa #$nextTableNumber açıldı'),
-            backgroundColor: Colors.green.shade600,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Manuel masa eklenirken hata oluştu: $e'),
-            backgroundColor: Colors.red.shade600,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
+      print('Manuel masa eklenirken hata oluştu: $e');
     }
   }
 
@@ -500,6 +485,27 @@ class _HomeScreenState extends State<HomeScreen>
     }
   }
 
+  // Müşterinin masa bilgisini kontrol et
+  Future<bool> _hasTable(Customer customer) async {
+    try {
+      final existingTables = await _tableOrderRepository.getAllTables();
+      return existingTables.any((table) => 
+        table.ticketNumber == customer.ticketNumber
+      );
+    } catch (e) {
+      print('Masa kontrolü hatası: $e');
+      return false;
+    }
+  }
+
+  // Masa ekranına git
+  void _goToTableScreen(Customer customer) {
+    // Bottom navigation'da masa ekranı index 1'de
+    if (widget.onGoToTable != null) {
+      widget.onGoToTable!(customer.ticketNumber);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
 
@@ -509,211 +515,281 @@ class _HomeScreenState extends State<HomeScreen>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // App Bar with search
+            // Responsive App Bar with search
             Padding(
-              padding: const EdgeInsets.fromLTRB(20, 20, 20, 10),
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
               child: Column(
                 children: [
-                  // Title and Add Button
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'OyunLab',
-                            style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                              fontWeight: FontWeight.bold,
-                              color: AppTheme.primaryColor,
+                  // Title and Add Button - Responsive Layout
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      final screenWidth = constraints.maxWidth;
+                      final isSmallScreen = screenWidth < 600;
+                      final isMediumScreen = screenWidth < 900;
+                      
+                      if (isSmallScreen) {
+                        // Small screens: Stack vertically
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Title
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'OyunLab',
+                                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                    color: AppTheme.primaryColor,
+                                    fontSize: 24,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  'Oyun Alanı Takip',
+                                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                    color: AppTheme.secondaryTextColor,
+                                  ),
+                                ),
+                              ],
                             ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            'Oyun Alanı Takip',
-                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              color: AppTheme.secondaryTextColor,
-                            ),
-                          ),
-                        ],
-                      ),
-                                                                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          // İlk satır: Masa Ekle ve Yeni Kayıt
-                          Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              ElevatedButton.icon(
-                                onPressed: () async => await _showAddTableDialog(),
-                                icon: const Icon(Icons.table_restaurant_rounded, size: 20),
-                                label: const Text('Masa Ekle'),
-                                style: ElevatedButton.styleFrom(
-                                  elevation: 0,
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 16,
-                                    vertical: 12,
-                                  ),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  backgroundColor: AppTheme.accentColor,
-                                  foregroundColor: Colors.white,
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              ElevatedButton.icon(
-                                onPressed: _showNewCustomerForm,
-                                icon: const Icon(Icons.add_rounded, size: 20),
-                                label: const Text('Yeni Kayıt'),
-                                style: ElevatedButton.styleFrom(
-                                  elevation: 0,
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 16,
-                                    vertical: 12,
-                                  ),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  backgroundColor: AppTheme.primaryColor,
-                                  foregroundColor: Colors.white,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          // İkinci satır: Bilet Sıfırla ve Tümünü Sil
-                          Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              ElevatedButton.icon(
-                                onPressed: () async {
-                                  await widget.customerRepository.resetTicketNumbers();
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text('Bilet numaraları 100\'den başlatıldı'),
-                                      backgroundColor: Colors.green.shade600,
-                                    ),
-                                  );
-                                },
-                                icon: const Icon(Icons.refresh, size: 20),
-                                label: const Text('Bilet Sıfırla'),
-                                style: ElevatedButton.styleFrom(
-                                  elevation: 0,
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 16,
-                                    vertical: 12,
-                                  ),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  backgroundColor: Colors.orange.shade600,
-                                  foregroundColor: Colors.white,
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              ElevatedButton.icon(
-                                onPressed: () async {
-                                  // Onay dialog'u göster
-                                  final confirmed = await showDialog<bool>(
-                                    context: context,
-                                    builder: (context) => AlertDialog(
-                                      title: Text('Dikkat!'),
-                                      content: Text('Tüm müşteri verileri silinecek. Bu işlem geri alınamaz. Devam etmek istiyor musunuz?'),
-                                      actions: [
-                                        TextButton(
-                                          onPressed: () => Navigator.pop(context, false),
-                                          child: Text('İptal'),
-                                        ),
-                                        ElevatedButton(
-                                          onPressed: () => Navigator.pop(context, true),
-                                          style: ElevatedButton.styleFrom(
-                                            backgroundColor: Colors.red.shade600,
-                                          ),
-                                          child: Text('Tümünü Sil'),
-                                        ),
-                                      ],
-                                    ),
-                                  );
-                                  
-                                  if (confirmed == true) {
-                                    await widget.customerRepository.clearAllCustomers();
-                                    
-                                    // Callback'i çağır
-                                    if (widget.onDataCleared != null) {
-                                      widget.onDataCleared!();
-                                    }
-                                    
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: Text('Tüm müşteri verileri silindi'),
-                                        backgroundColor: Colors.red.shade600,
+                            const SizedBox(height: 16),
+                            // Buttons - Full width on small screens
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: ElevatedButton.icon(
+                                    onPressed: () async => await _showAddTableDialog(),
+                                    icon: const Icon(Icons.table_restaurant_rounded, size: 18),
+                                    label: const Text('Masa Ekle'),
+                                    style: ElevatedButton.styleFrom(
+                                      elevation: 0,
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 12,
+                                        vertical: 12,
                                       ),
-                                    );
-                                  }
-                                },
-                                icon: const Icon(Icons.delete_forever, size: 20),
-                                label: const Text('Tümünü Sil'),
-                                style: ElevatedButton.styleFrom(
-                                  elevation: 0,
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 16,
-                                    vertical: 12,
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      backgroundColor: AppTheme.accentColor,
+                                      foregroundColor: Colors.white,
+                                    ),
                                   ),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  backgroundColor: Colors.red.shade600,
-                                  foregroundColor: Colors.white,
                                 ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ],
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: ElevatedButton.icon(
+                                    onPressed: _showNewCustomerForm,
+                                    icon: const Icon(Icons.add_rounded, size: 18),
+                                    label: const Text('Yeni Kayıt'),
+                                    style: ElevatedButton.styleFrom(
+                                      elevation: 0,
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 12,
+                                        vertical: 12,
+                                      ),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      backgroundColor: AppTheme.primaryColor,
+                                      foregroundColor: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        );
+                      } else if (isMediumScreen) {
+                        // Medium screens: Horizontal layout with smaller buttons
+                        return Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            // Title
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'OyunLab',
+                                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                    color: AppTheme.primaryColor,
+                                    fontSize: 26,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  'Oyun Alanı Takip',
+                                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                    color: AppTheme.secondaryTextColor,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            // Buttons - Compact
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                ElevatedButton.icon(
+                                  onPressed: () async => await _showAddTableDialog(),
+                                  icon: const Icon(Icons.table_restaurant_rounded, size: 18),
+                                  label: const Text('Masa Ekle'),
+                                  style: ElevatedButton.styleFrom(
+                                    elevation: 0,
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 10,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    backgroundColor: AppTheme.accentColor,
+                                    foregroundColor: Colors.white,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                ElevatedButton.icon(
+                                  onPressed: _showNewCustomerForm,
+                                  icon: const Icon(Icons.add_rounded, size: 18),
+                                  label: const Text('Yeni Kayıt'),
+                                  style: ElevatedButton.styleFrom(
+                                    elevation: 0,
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 10,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    backgroundColor: AppTheme.primaryColor,
+                                    foregroundColor: Colors.white,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        );
+                      } else {
+                        // Large screens: Full horizontal layout
+                        return Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            // Title
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'OyunLab',
+                                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                    color: AppTheme.primaryColor,
+                                    fontSize: 28,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  'Oyun Alanı Takip',
+                                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                    color: AppTheme.secondaryTextColor,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            // Buttons - Full size
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                ElevatedButton.icon(
+                                  onPressed: () async => await _showAddTableDialog(),
+                                  icon: const Icon(Icons.table_restaurant_rounded, size: 20),
+                                  label: const Text('Masa Ekle'),
+                                  style: ElevatedButton.styleFrom(
+                                    elevation: 0,
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 16,
+                                      vertical: 12,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    backgroundColor: AppTheme.accentColor,
+                                    foregroundColor: Colors.white,
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                ElevatedButton.icon(
+                                  onPressed: _showNewCustomerForm,
+                                  icon: const Icon(Icons.add_rounded, size: 20),
+                                  label: const Text('Yeni Kayıt'),
+                                  style: ElevatedButton.styleFrom(
+                                    elevation: 0,
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 16,
+                                      vertical: 12,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    backgroundColor: AppTheme.primaryColor,
+                                    foregroundColor: Colors.white,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        );
+                      }
+                    },
                   ),
 
-                  // Search Bar
+                  // Responsive Search Bar
                   const SizedBox(height: 16),
-                  Container(
-                    height: 45,
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(12),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.grey.withOpacity(0.1),
-                          blurRadius: 6,
-                          offset: const Offset(0, 2),
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      final screenWidth = constraints.maxWidth;
+                      final isSmallScreen = screenWidth < 600;
+                      
+                      return Container(
+                        height: isSmallScreen ? 50 : 45,
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.grey.withOpacity(0.1),
+                              blurRadius: 6,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
-                    child: TextField(
-                      decoration: InputDecoration(
-                        prefixIcon: Icon(
-                          Icons.search_rounded,
-                          color: Colors.grey.shade500,
+                        child: TextField(
+                          decoration: InputDecoration(
+                            prefixIcon: Icon(
+                              Icons.search_rounded,
+                              color: Colors.grey.shade500,
+                              size: isSmallScreen ? 22 : 20,
+                            ),
+                            hintText: 'İsim veya telefon numarası ara...',
+                            hintStyle: TextStyle(
+                              color: Colors.grey.shade400,
+                              fontSize: isSmallScreen ? 15 : 14,
+                            ),
+                            border: InputBorder.none,
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 12,
+                            ),
+                          ),
+                          style: TextStyle(fontSize: isSmallScreen ? 15 : 14),
+                          controller: _searchController,
+                          onChanged: (value) {
+                            setState(() {
+                              _searchQuery = value;
+                            });
+                          },
                         ),
-                        hintText: 'İsim veya telefon numarası ara...',
-                        hintStyle: TextStyle(
-                          color: Colors.grey.shade400,
-                          fontSize: 14,
-                        ),
-                        border: InputBorder.none,
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 12,
-                        ),
-                      ),
-                      style: const TextStyle(fontSize: 14),
-                      controller: _searchController,
-                      onChanged: (value) {
-                        setState(() {
-                          _searchQuery = value;
-                        });
-                      },
-                    ),
+                      );
+                    },
                   ),
                 ],
               ),
@@ -1326,6 +1402,39 @@ class _HomeScreenState extends State<HomeScreen>
                         ),
                       ),
                     ],
+                  ),
+
+                  const SizedBox(height: 14),
+
+                  // Masa butonu (eğer masa varsa)
+                  FutureBuilder<bool>(
+                    future: _hasTable(customer),
+                    builder: (context, snapshot) {
+                      if (snapshot.connectionState == ConnectionState.waiting) {
+                        return const SizedBox.shrink();
+                      }
+                      
+                      final hasTable = snapshot.data ?? false;
+                      
+                      if (!hasTable) {
+                        return const SizedBox.shrink();
+                      }
+                      
+                      return Row(
+                        children: [
+                          Expanded(
+                            child: _buildActionButton(
+                              icon: Icons.table_restaurant_rounded,
+                              label: 'Masaya Git',
+                              color: Colors.purple.shade600,
+                              onPressed: () => _goToTableScreen(customer),
+                            ),
+                          ),
+                          const SizedBox(width: 14),
+                          const Expanded(child: SizedBox()), // Boş alan
+                        ],
+                      );
+                    },
                   ),
 
                   const SizedBox(height: 28),
@@ -2661,20 +2770,15 @@ class _HomeScreenState extends State<HomeScreen>
                 Navigator.pop(context); // Detay sayfasını kapat
 
                 // Başarılı bildirimi göster
-                final actionDone =
-                    isPaused ? 'devam ettirildi' : 'duraklatıldı';
-                final message =
-                    siblings.length > 1
-                        ? '${siblings.length} çocuğun oyunu $actionDone'
-                        : '${customer.childName} isimli çocuğun oyunu $actionDone';
-
+                final actionDone = isPaused ? 'devam ettirildi' : 'duraklatıldı';
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
-                    content: Text(message),
-                    backgroundColor: Colors.blue.shade600,
+                    content: Text('Oyun $actionDone'),
+                    backgroundColor: Colors.green.shade600,
                     behavior: SnackBarBehavior.floating,
                   ),
                 );
+
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.blue.shade600,

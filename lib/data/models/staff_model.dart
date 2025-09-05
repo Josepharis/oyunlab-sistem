@@ -1,5 +1,3 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
-
 class Staff {
   final String id;
   final String name;
@@ -10,6 +8,7 @@ class Staff {
   final bool isActive;
   final DateTime createdAt;
   final DateTime? updatedAt;
+  final String? firebaseUid; // Firebase Auth UID
 
   Staff({
     required this.id,
@@ -21,6 +20,7 @@ class Staff {
     this.isActive = true,
     required this.createdAt,
     this.updatedAt,
+    this.firebaseUid,
   });
 
   Staff copyWith({
@@ -33,6 +33,7 @@ class Staff {
     bool? isActive,
     DateTime? createdAt,
     DateTime? updatedAt,
+    String? firebaseUid,
   }) {
     return Staff(
       id: id ?? this.id,
@@ -44,6 +45,7 @@ class Staff {
       isActive: isActive ?? this.isActive,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
+      firebaseUid: firebaseUid ?? this.firebaseUid,
     );
   }
 
@@ -58,6 +60,7 @@ class Staff {
       'isActive': isActive,
       'createdAt': createdAt.toIso8601String(),
       'updatedAt': updatedAt?.toIso8601String(),
+      'firebaseUid': firebaseUid,
     };
   }
 
@@ -78,6 +81,7 @@ class Staff {
       updatedAt: json['updatedAt'] != null
           ? DateTime.parse(json['updatedAt'])
           : null,
+      firebaseUid: json['firebaseUid'],
     );
   }
 

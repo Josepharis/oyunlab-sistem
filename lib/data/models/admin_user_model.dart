@@ -18,6 +18,7 @@ class AdminUser {
   final bool isActive;
   final List<String> permissions;
   final Map<String, dynamic>? additionalData;
+  final String? firebaseUid; // Firebase Auth UID
 
   AdminUser({
     required this.id,
@@ -30,6 +31,7 @@ class AdminUser {
     required this.isActive,
     required this.permissions,
     this.additionalData,
+    this.firebaseUid,
   });
 
   // JSON'dan AdminUser oluştur
@@ -48,6 +50,7 @@ class AdminUser {
       isActive: json['isActive'] as bool? ?? true,
       permissions: List<String>.from(json['permissions'] ?? []),
       additionalData: json['additionalData'] as Map<String, dynamic>?,
+      firebaseUid: json['firebaseUid'] as String?,
     );
   }
 
@@ -63,6 +66,7 @@ class AdminUser {
       'isActive': isActive,
       'permissions': permissions,
       'additionalData': additionalData,
+      'firebaseUid': firebaseUid,
     };
     
     // ID sadece boş değilse ekle
@@ -99,6 +103,7 @@ class AdminUser {
     bool? isActive,
     List<String>? permissions,
     Map<String, dynamic>? additionalData,
+    String? firebaseUid,
   }) {
     return AdminUser(
       id: id ?? this.id,
@@ -111,6 +116,7 @@ class AdminUser {
       isActive: isActive ?? this.isActive,
       permissions: permissions ?? this.permissions,
       additionalData: additionalData ?? this.additionalData,
+      firebaseUid: firebaseUid ?? this.firebaseUid,
     );
   }
 

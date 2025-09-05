@@ -1,9 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:intl/intl.dart';
 import '../../core/theme/app_theme.dart';
 import '../../data/models/business_settings_model.dart';
 import '../../data/repositories/business_settings_repository.dart';
 import '../../data/services/admin_auth_service.dart';
+import '../../data/repositories/customer_repository.dart';
+import '../../data/services/sale_service.dart';
+import '../../core/di/service_locator.dart';
+import 'excel_import_screen.dart';
+import 'add_existing_customers_screen.dart';
 
 class BusinessManagementScreen extends StatefulWidget {
   const BusinessManagementScreen({Key? key}) : super(key: key);
@@ -12,12 +18,14 @@ class BusinessManagementScreen extends StatefulWidget {
   State<BusinessManagementScreen> createState() => _BusinessManagementScreenState();
 }
 
-class _BusinessManagementScreenState extends State<BusinessManagementScreen> {
+class _BusinessManagementScreenState extends State<BusinessManagementScreen>
+    with SingleTickerProviderStateMixin {
   final BusinessSettingsRepository _repository = BusinessSettingsRepository();
   List<BusinessSettings> _businessSettings = [];
   bool _isLoading = true;
   BusinessCategory? _selectedCategory;
   BusinessSettings? _selectedSetting;
+  late TabController _tabController;
 
   // Form controllers
   final _nameController = TextEditingController();
@@ -26,14 +34,45 @@ class _BusinessManagementScreenState extends State<BusinessManagementScreen> {
   final _priceController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
 
+  // Raporlar için değişkenler
+  DateTime _selectedDate = DateTime.now();
+  bool _isLoadingReports = false;
+  int _dailyChildCount = 0;
+  int _totalUsedTime = 0;
+  int _totalPurchasedTime = 0;
+  double _totalRevenue = 0.0;
+  int _packageCount = 0; // 600 dakika paket sayısı
+  
+  // Ek satış kategorileri
+  double _roboticsRevenue = 0.0;
+  double _gameGroupRevenue = 0.0;
+  double _workshopRevenue = 0.0;
+  int _roboticsCount = 0;
+  int _gameGroupCount = 0;
+  int _workshopCount = 0;
+  
+  // Oyun alanı ve kafe kategorileri
+  double _gameAreaRevenue = 0.0;
+  double _cafeRevenue = 0.0;
+  int _gameAreaCount = 0;
+  int _cafeCount = 0;
+
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: 2, vsync: this);
+    _tabController.addListener(() {
+      if (_tabController.index == 1) {
+        // Raporlar tab'ına geçildiğinde raporları yükle
+        _loadReports();
+      }
+    });
     _loadBusinessSettings();
   }
 
   @override
   void dispose() {
+    _tabController.dispose();
     _nameController.dispose();
     _descriptionController.dispose();
     _durationController.dispose();
@@ -110,6 +149,131 @@ class _BusinessManagementScreenState extends State<BusinessManagementScreen> {
       _selectedCategory = category;
       _updateSelectedSetting();
     });
+  }
+
+  // Raporları yükle
+  Future<void> _loadReports() async {
+    setState(() {
+      _isLoadingReports = true;
+    });
+
+    try {
+      final customerRepository = ServiceLocator.locator<CustomerRepository>();
+      final saleService = ServiceLocator.locator<SaleService>();
+
+      // Seçilen tarihin başlangıcı ve sonu
+      final startOfDay = DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day);
+      final endOfDay = startOfDay.add(const Duration(days: 1));
+
+      // Tüm müşteri verilerini al
+      final allCustomers = await customerRepository.getAllCustomersHistory();
+      
+      // Seçilen tarih aralığındaki müşterileri filtrele
+      final customers = allCustomers.where((customer) {
+        final customerDate = customer.entryTime;
+        return customerDate.isAfter(startOfDay) && customerDate.isBefore(endOfDay);
+      }).toList();
+      
+      print('RAPOR: Seçilen tarih: ${DateFormat('dd/MM/yyyy').format(_selectedDate)}');
+      print('RAPOR: Tarih aralığı: ${DateFormat('dd/MM/yyyy').format(startOfDay)} - ${DateFormat('dd/MM/yyyy').format(endOfDay)}');
+      print('RAPOR: Toplam müşteri: ${allCustomers.length}, Filtrelenmiş müşteri: ${customers.length}');
+      
+      // Günlük giren çocuk sayısı
+      _dailyChildCount = customers.length;
+
+      // Satış verilerini al
+      final sales = await saleService.getAllSales(
+        startDate: startOfDay,
+        endDate: endOfDay,
+      );
+      
+      print('RAPOR: Filtrelenmiş satış sayısı: ${sales.length}');
+      
+      _totalUsedTime = 0;
+      _totalPurchasedTime = 0;
+      _totalRevenue = 0.0;
+      _packageCount = 0;
+      
+      // Ek satış kategorilerini sıfırla
+      _roboticsRevenue = 0.0;
+      _gameGroupRevenue = 0.0;
+      _workshopRevenue = 0.0;
+      _roboticsCount = 0;
+      _gameGroupCount = 0;
+      _workshopCount = 0;
+      
+      // Oyun alanı ve kafe kategorilerini sıfırla
+      _gameAreaRevenue = 0.0;
+      _cafeRevenue = 0.0;
+      _gameAreaCount = 0;
+      _cafeCount = 0;
+
+      // Filtrelenmiş müşteri verilerinden süre bilgilerini hesapla
+      for (final customer in customers) {
+        _totalUsedTime += customer.usedSeconds ~/ 60; // Saniyeyi dakikaya çevir
+        _totalPurchasedTime += customer.purchasedSeconds ~/ 60; // Saniyeyi dakikaya çevir
+      }
+
+      // Satış verilerinden gelir hesapla ve kategorilere ayır
+      print('RAPOR: ${sales.length} satış bulundu');
+      for (final sale in sales) {
+        _totalRevenue += sale.amount;
+        
+        // Debug: Satış bilgilerini yazdır
+        print('RAPOR: Satış - ${sale.description} (${sale.amount}₺)');
+        
+        // Satış açıklamasına göre kategorilere ayır
+        final description = sale.description.toLowerCase();
+        print('RAPOR: Açıklama (küçük harf): $description');
+        
+        if (description.contains('robotik') || description.contains('kodlama') || description.contains('robot')) {
+          _roboticsRevenue += sale.amount;
+          _roboticsCount++;
+          print('RAPOR: Robotik kategorisine eklendi');
+        } else if (description.contains('oyun grubu') || description.contains('oyun grubu') || description.contains('oyun') || description.contains('grup')) {
+          _gameGroupRevenue += sale.amount;
+          _gameGroupCount++;
+          print('RAPOR: Oyun grubu kategorisine eklendi');
+        } else if (description.contains('workshop') || description.contains('atölye') || description.contains('atolye')) {
+          _workshopRevenue += sale.amount;
+          _workshopCount++;
+          print('RAPOR: Workshop kategorisine eklendi');
+        } else if (description.contains('oyun alanı') || description.contains('oyun alani') || description.contains('oyun alan') || description.contains('süre') || description.contains('sure') || description.contains('dakika') || description.contains('dk')) {
+          _gameAreaRevenue += sale.amount;
+          _gameAreaCount++;
+          print('RAPOR: Oyun alanı kategorisine eklendi');
+        } else if (description.contains('kafe') || description.contains('masa') || description.contains('sipariş') || description.contains('siparis') || description.contains('yemek') || description.contains('içecek') || description.contains('icecek') || description.contains('pasta') || description.contains('yiyecek') || description.contains('içecek')) {
+          _cafeRevenue += sale.amount;
+          _cafeCount++;
+          print('RAPOR: Kafe kategorisine eklendi');
+        } else {
+          print('RAPOR: Hiçbir kategoriye uymadı');
+        }
+      }
+      
+      print('RAPOR: Toplam ciro: $_totalRevenue₺');
+      print('RAPOR: Robotik: $_roboticsRevenue₺ ($_roboticsCount satış)');
+      print('RAPOR: Oyun grubu: $_gameGroupRevenue₺ ($_gameGroupCount satış)');
+      print('RAPOR: Workshop: $_workshopRevenue₺ ($_workshopCount satış)');
+      print('RAPOR: Oyun alanı: $_gameAreaRevenue₺ ($_gameAreaCount satış)');
+      print('RAPOR: Kafe: $_cafeRevenue₺ ($_cafeCount satış)');
+      
+      // 600 dakika paket sayısını hesapla
+      _packageCount = (_totalPurchasedTime / 600).floor();
+
+    } catch (e) {
+      print('Rapor yükleme hatası: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Raporlar yüklenirken hata oluştu: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      setState(() {
+        _isLoadingReports = false;
+      });
+    }
   }
 
   // Yeni kategori ekleme dialog'u
@@ -514,6 +678,115 @@ class _BusinessManagementScreenState extends State<BusinessManagementScreen> {
     );
   }
 
+  // Tüm verileri temizleme dialog'u
+  void _showClearAllDataDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.warning, color: Colors.red),
+            const SizedBox(width: 8),
+            const Text('Tüm Verileri Temizle'),
+          ],
+        ),
+        content: const Text(
+          'Bu işlem TÜM müşteri ve satış verilerini kalıcı olarak silecektir. Bu işlem geri alınamaz!\n\nDevam etmek istediğinizden emin misiniz?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('İptal'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              Navigator.pop(context);
+              await _clearAllData();
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Tüm Verileri Sil'),
+          ),
+        ],
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+      ),
+    );
+  }
+
+  // Tüm verileri temizle
+  Future<void> _clearAllData() async {
+    try {
+      // Loading göster
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const AlertDialog(
+          content: Row(
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(width: 16),
+              Text('Veriler temizleniyor...'),
+            ],
+          ),
+        ),
+      );
+
+      final customerRepository = ServiceLocator.locator<CustomerRepository>();
+      final saleService = ServiceLocator.locator<SaleService>();
+
+      // Müşteri verilerini temizle
+      await customerRepository.clearAllCustomers();
+      print('Tüm müşteri verileri temizlendi');
+
+      // Satış verilerini temizle (tüm kullanıcıların satışları)
+      // Bu için önce tüm satışları alıp sonra silmemiz gerekiyor
+      final allSales = await saleService.getAllSales();
+      for (final sale in allSales) {
+        await saleService.deleteSale(sale.id);
+      }
+      print('${allSales.length} satış kaydı temizlendi');
+
+      // Loading dialog'u kapat
+      if (mounted) {
+        Navigator.pop(context);
+      }
+
+      // Başarı mesajı
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Tüm veriler başarıyla temizlendi'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+
+    } catch (e) {
+      print('Veri temizleme hatası: $e');
+      
+      // Loading dialog'u kapat
+      if (mounted) {
+        Navigator.pop(context);
+      }
+
+      // Hata mesajı
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Veri temizlenirken hata oluştu: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    }
+  }
+
   // Çıkış yapma dialog'u
   void _showLogoutDialog() {
     showDialog(
@@ -567,55 +840,315 @@ class _BusinessManagementScreenState extends State<BusinessManagementScreen> {
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 1,
-        title: Row(
-          children: [
-            Icon(Icons.business, color: AppTheme.primaryColor),
-            const SizedBox(width: 8),
-            const Text(
-              'İşletme Yönetimi',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: Colors.black87,
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          // Kullanıcı bilgisi
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            margin: const EdgeInsets.only(right: 16),
-            decoration: BoxDecoration(
-              color: AppTheme.primaryColor.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
+        title: LayoutBuilder(
+          builder: (context, constraints) {
+            final screenWidth = constraints.maxWidth;
+            final isSmallScreen = screenWidth < 400;
+            
+            return Row(
               children: [
                 Icon(
-                  Icons.person,
-                  size: 16,
+                  Icons.business, 
                   color: AppTheme.primaryColor,
+                  size: isSmallScreen ? 20 : 24,
                 ),
-                const SizedBox(width: 6),
+                SizedBox(width: isSmallScreen ? 6 : 8),
                 Text(
-                  adminAuthService.userRoleString,
+                  'İşletme Yönetimi',
                   style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                    color: AppTheme.primaryColor,
+                    fontSize: isSmallScreen ? 16 : 18,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black87,
                   ),
                 ),
               ],
-            ),
+            );
+          },
+        ),
+        actions: [
+          // Responsive Kullanıcı bilgisi
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final screenWidth = constraints.maxWidth;
+              final isSmallScreen = screenWidth < 400;
+              
+              return Container(
+                padding: EdgeInsets.symmetric(
+                  horizontal: isSmallScreen ? 8 : 12, 
+                  vertical: isSmallScreen ? 4 : 6
+                ),
+                margin: const EdgeInsets.only(right: 16),
+                decoration: BoxDecoration(
+                  color: AppTheme.primaryColor.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.person,
+                      size: isSmallScreen ? 14 : 16,
+                      color: AppTheme.primaryColor,
+                    ),
+                    SizedBox(width: isSmallScreen ? 4 : 6),
+                    Text(
+                      adminAuthService.userRoleString,
+                      style: TextStyle(
+                        fontSize: isSmallScreen ? 10 : 12,
+                        fontWeight: FontWeight.w500,
+                        color: AppTheme.primaryColor,
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
           ),
         ],
+        bottom: TabBar(
+          controller: _tabController,
+          tabs: const [
+            Tab(
+              icon: Icon(Icons.settings),
+              text: 'Ayarlar',
+            ),
+            Tab(
+              icon: Icon(Icons.analytics),
+              text: 'Raporlar',
+            ),
+          ],
+          labelColor: AppTheme.primaryColor,
+          unselectedLabelColor: Colors.grey,
+          indicatorColor: AppTheme.primaryColor,
+        ),
         // Geri butonu kaldırıldı
       ),
-      body: Column(
+      body: TabBarView(
+        controller: _tabController,
         children: [
-          // Kategori seçimi ve yönetimi
+          // Ayarlar Tab
+          _buildSettingsTab(),
+          // Raporlar Tab
+          _buildReportsTab(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSettingsTab() {
+    return Column(
+      children: [
+        // Kategori seçimi ve yönetimi
+        Container(
+          margin: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.1),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.category, color: AppTheme.primaryColor),
+                  const SizedBox(width: 8),
+                  const Text(
+                    'Kategori Seçimi',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const Spacer(),
+                  // Yeni kategori ekleme butonu
+                  IconButton(
+                    onPressed: _showAddCategoryDialog,
+                    icon: Icon(Icons.add_circle, color: AppTheme.primaryColor),
+                    tooltip: 'Yeni Kategori Ekle',
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              
+              // Kategori dropdown
+              DropdownButtonFormField<BusinessCategory>(
+                value: _selectedCategory,
+                decoration: InputDecoration(
+                  labelText: 'Kategori Seçin',
+                  prefixIcon: Icon(Icons.arrow_drop_down),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                items: _businessSettings
+                    .map((setting) => setting.category)
+                    .toSet() // Duplicate kategorileri kaldır
+                    .map((category) {
+                  final setting = _businessSettings.firstWhere(
+                    (s) => s.category == category,
+                  );
+                  print('Dropdown item: ${setting.name} -> ${category}');
+                  return DropdownMenuItem(
+                    value: category,
+                    child: Row(
+                      children: [
+                        Text(setting.categoryIcon),
+                        const SizedBox(width: 8),
+                        Text(setting.name),
+                      ],
+                    ),
+                  );
+                }).toList(),
+                onChanged: _onCategoryChanged,
+              ),
+              
+              const SizedBox(height: 16),
+              
+              // Seçilen kategori bilgileri
+              if (_selectedSetting != null) ...[
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.blue.shade200),
+                  ),
+                  child: Row(
+                    children: [
+                      Text(
+                        _selectedSetting!.categoryIcon,
+                        style: const TextStyle(fontSize: 24),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _selectedSetting!.name,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                              ),
+                            ),
+                            Text(
+                              _selectedSetting!.description,
+                              style: TextStyle(
+                                color: Colors.grey.shade600,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      // Kategori silme butonu
+                      IconButton(
+                        onPressed: () => _showDeleteCategoryDialog(_selectedSetting!),
+                        icon: Icon(Icons.delete, color: Colors.red.shade600),
+                        tooltip: 'Kategoriyi Sil',
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+        
+        // Mevcut Kullanıcıları Ekleme Bölümü
+        Container(
+          margin: const EdgeInsets.symmetric(horizontal: 16),
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.1),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.people_alt_rounded, color: AppTheme.primaryColor),
+                  const SizedBox(width: 8),
+                  const Text(
+                    'Mevcut Kullanıcıları Ekle',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'Önceki sistemden 130 kullanıcıyı yeni sisteme aktarın. Bu kullanıcılar giriş yapmayacak, sadece veri kaydedilecek. Ebeveyn adları boş bırakılacak ve giriş sırasında istenecek.',
+                style: TextStyle(
+                  color: Colors.grey.shade600,
+                  fontSize: 14,
+                ),
+              ),
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const AddExistingCustomersScreen(),
+                      ),
+                    );
+                  },
+                  icon: const Icon(Icons.upload_rounded),
+                  label: const Text('Mevcut Kullanıcıları Ekle'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.primaryColor,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        
+        // İçerik
+        Expanded(
+          child: _isLoading
+              ? const Center(
+                  child: CircularProgressIndicator(),
+                )
+              : _selectedSetting == null
+                  ? _buildEmptyState()
+                  : _buildCategoryContent(),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildReportsTab() {
+    return SingleChildScrollView(
+      child: Column(
+        children: [
+          // Tarih seçimi
           Container(
             margin: const EdgeInsets.all(16),
             padding: const EdgeInsets.all(16),
@@ -635,132 +1168,314 @@ class _BusinessManagementScreenState extends State<BusinessManagementScreen> {
               children: [
                 Row(
                   children: [
-                    Icon(Icons.category, color: AppTheme.primaryColor),
+                    Icon(Icons.calendar_today, color: AppTheme.primaryColor),
                     const SizedBox(width: 8),
                     const Text(
-                      'Kategori Seçimi',
+                      'Tarih Seçimi',
                       style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
-                    const Spacer(),
-                    // Yeni kategori ekleme butonu
-                    IconButton(
-                      onPressed: _showAddCategoryDialog,
-                      icon: Icon(Icons.add_circle, color: AppTheme.primaryColor),
-                      tooltip: 'Yeni Kategori Ekle',
-                    ),
                   ],
                 ),
                 const SizedBox(height: 16),
-                
-                // Kategori dropdown
-                DropdownButtonFormField<BusinessCategory>(
-                  value: _selectedCategory,
-                  decoration: InputDecoration(
-                    labelText: 'Kategori Seçin',
-                    prefixIcon: Icon(Icons.arrow_drop_down),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  items: _businessSettings
-                      .map((setting) => setting.category)
-                      .toSet() // Duplicate kategorileri kaldır
-                      .map((category) {
-                    final setting = _businessSettings.firstWhere(
-                      (s) => s.category == category,
-                    );
-                    print('Dropdown item: ${setting.name} -> ${category}');
-                    return DropdownMenuItem(
-                      value: category,
-                      child: Row(
-                        children: [
-                          Text(setting.categoryIcon),
-                          const SizedBox(width: 8),
-                          Text(setting.name),
-                        ],
-                      ),
-                    );
-                  }).toList(),
-                  onChanged: _onCategoryChanged,
-                ),
-                
-                const SizedBox(height: 16),
-                
-                // Seçilen kategori bilgileri
-                if (_selectedSetting != null) ...[
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.blue.shade50,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.blue.shade200),
-                    ),
-                    child: Row(
-                      children: [
-                        Text(
-                          _selectedSetting!.categoryIcon,
-                          style: const TextStyle(fontSize: 24),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                Row(
+                  children: [
+                    Expanded(
+                      child: InkWell(
+                        onTap: () async {
+                          final date = await showDatePicker(
+                            context: context,
+                            initialDate: _selectedDate,
+                            firstDate: DateTime(2020),
+                            lastDate: DateTime.now(),
+                          );
+                          if (date != null) {
+                            setState(() {
+                              _selectedDate = date;
+                            });
+                            _loadReports();
+                          }
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            border: Border.all(color: Colors.grey.shade300),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Row(
                             children: [
+                              Icon(Icons.calendar_month, color: Colors.grey.shade600),
+                              const SizedBox(width: 8),
                               Text(
-                                _selectedSetting!.name,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 16,
-                                ),
-                              ),
-                              Text(
-                                _selectedSetting!.description,
-                                style: TextStyle(
-                                  color: Colors.grey.shade600,
-                                  fontSize: 14,
-                                ),
+                                DateFormat('dd/MM/yyyy').format(_selectedDate),
+                                style: const TextStyle(fontSize: 16),
                               ),
                             ],
                           ),
                         ),
-                        // Kategori silme butonu
-                        IconButton(
-                          onPressed: () => _showDeleteCategoryDialog(_selectedSetting!),
-                          icon: Icon(Icons.delete, color: Colors.red.shade600),
-                          tooltip: 'Kategoriyi Sil',
-                        ),
-                      ],
+                      ),
                     ),
-                  ),
-                ],
+                    const SizedBox(width: 16),
+                    ElevatedButton.icon(
+                      onPressed: _loadReports,
+                      icon: const Icon(Icons.refresh),
+                      label: const Text('Yenile'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppTheme.primaryColor,
+                        foregroundColor: Colors.white,
+                      ),
+                    ),
+                  ],
+                ),
               ],
             ),
           ),
           
-          // İçerik
-          Expanded(
-            child: _isLoading
-                ? const Center(
-                    child: CircularProgressIndicator(),
-                  )
-                : _selectedSetting == null
-                    ? _buildEmptyState()
-                    : _buildCategoryContent(),
+          // Rapor kartları
+          _isLoadingReports
+              ? const Padding(
+                  padding: EdgeInsets.all(32.0),
+                  child: CircularProgressIndicator(),
+                )
+              : _buildReportCards(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildReportCards() {
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        children: [
+          // Ana rapor kartları - Grid layout
+          GridView.count(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            crossAxisCount: 2,
+            childAspectRatio: 1.5,
+            crossAxisSpacing: 8,
+            mainAxisSpacing: 8,
+            children: [
+              // Toplam ciro - İLK SIRADA
+              _buildReportCard(
+                title: 'Toplam Ciro',
+                value: '${_totalRevenue.toStringAsFixed(0)}₺',
+                icon: Icons.attach_money,
+                color: Colors.purple,
+                subtitle: 'Günlük gelir',
+              ),
+              
+              // Günlük giren çocuk sayısı
+              _buildReportCard(
+                title: 'Günlük Giren Çocuk',
+                value: _dailyChildCount.toString(),
+                icon: Icons.child_care,
+                color: Colors.blue,
+                subtitle: 'Çocuk sayısı',
+              ),
+              
+              // Toplam kullanılan süre
+              _buildReportCard(
+                title: 'Kullanılan Süre',
+                value: '${_totalUsedTime}dk',
+                icon: Icons.access_time,
+                color: Colors.orange,
+                subtitle: 'Oyun süresi',
+              ),
+              
+              // Toplam satın alınan süre
+              _buildReportCard(
+                title: 'Satın Alınan Süre',
+                value: '${_totalPurchasedTime}dk',
+                icon: Icons.shopping_cart,
+                color: Colors.green,
+                subtitle: 'Alınan süre',
+              ),
+              
+              // 600 dakika paket sayısı
+              _buildReportCard(
+                title: '600dk Paket',
+                value: _packageCount.toString(),
+                icon: Icons.inventory,
+                color: Colors.teal,
+                subtitle: 'Paket adedi',
+              ),
+              
+              // Robotik/Kodlama satışları
+              _buildReportCard(
+                title: 'Robotik/Kodlama',
+                value: '${_roboticsRevenue.toStringAsFixed(0)}₺',
+                icon: Icons.smart_toy,
+                color: Colors.cyan,
+                subtitle: '${_roboticsCount} satış',
+              ),
+              
+              // Oyun grubu satışları
+              _buildReportCard(
+                title: 'Oyun Grubu',
+                value: '${_gameGroupRevenue.toStringAsFixed(0)}₺',
+                icon: Icons.groups,
+                color: Colors.amber,
+                subtitle: '${_gameGroupCount} satış',
+              ),
+              
+              // Workshop satışları
+              _buildReportCard(
+                title: 'Workshop',
+                value: '${_workshopRevenue.toStringAsFixed(0)}₺',
+                icon: Icons.school,
+                color: Colors.deepOrange,
+                subtitle: '${_workshopCount} satış',
+              ),
+              
+              // Oyun alanı satışları
+              _buildReportCard(
+                title: 'Oyun Alanı',
+                value: '${_gameAreaRevenue.toStringAsFixed(0)}₺',
+                icon: Icons.games,
+                color: Colors.blueGrey,
+                subtitle: '${_gameAreaCount} satış',
+              ),
+              
+              // Kafe satışları
+              _buildReportCard(
+                title: 'Kafe',
+                value: '${_cafeRevenue.toStringAsFixed(0)}₺',
+                icon: Icons.restaurant,
+                color: Colors.brown,
+                subtitle: '${_cafeCount} satış',
+              ),
+            ],
+          ),
+          
+          // Paket detayları - sadece paket varsa göster
+          if (_packageCount > 0) ...[
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.05),
+                    blurRadius: 4,
+                    offset: const Offset(0, 1),
+                  ),
+                ],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.info, color: Colors.teal, size: 16),
+                      const SizedBox(width: 6),
+                      const Text(
+                        'Paket Detayları',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '• ${_packageCount} adet 600 dakika paketi satıldı',
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                  Text(
+                    '• Toplam paket değeri: ${(_packageCount * 600).toString()} dakika',
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                  if (_totalPurchasedTime > 0)
+                    Text(
+                      '• Paket oranı: %${((_packageCount * 600) / _totalPurchasedTime * 100).toStringAsFixed(1)}',
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildReportCard({
+    required String title,
+    required String value,
+    required IconData icon,
+    required Color color,
+    required String subtitle,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 4,
+            offset: const Offset(0, 1),
           ),
         ],
       ),
-      floatingActionButton: _selectedSetting != null
-          ? FloatingActionButton.extended(
-              onPressed: _showAddDurationPriceDialog,
-              icon: const Icon(Icons.add),
-              label: Text('${_selectedSetting!.name} Seçeneği Ekle'),
-              backgroundColor: AppTheme.primaryColor,
-              foregroundColor: Colors.white,
-            )
-          : null,
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(
+              icon,
+              color: color,
+              size: 18,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.black87,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  value,
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: color,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: Colors.grey.shade600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -903,9 +1618,67 @@ class _BusinessManagementScreenState extends State<BusinessManagementScreen> {
         
         const SizedBox(height: 16),
         
-        // Çıkış butonu - Sayfanın altına eklendi
+        // Excel import butonu
+        Container(
+          margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          child: ElevatedButton.icon(
+            onPressed: () => _navigateToExcelImport(),
+            icon: const Icon(Icons.upload_file, color: Colors.white),
+            label: const Text(
+              'Excel Veri Aktarımı',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+              ),
+            ),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.blue.shade600,
+              foregroundColor: Colors.white,
+              elevation: 2,
+              padding: const EdgeInsets.symmetric(
+                horizontal: 32,
+                vertical: 16,
+              ),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+          ),
+        ),
+        
+        // Veri temizleme butonu
         Container(
           margin: const EdgeInsets.all(16),
+          child: ElevatedButton.icon(
+            onPressed: () => _showClearAllDataDialog(),
+            icon: const Icon(Icons.delete_forever, color: Colors.white),
+            label: const Text(
+              'Tüm Verileri Temizle',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+              ),
+            ),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.orange.shade600,
+              foregroundColor: Colors.white,
+              elevation: 2,
+              padding: const EdgeInsets.symmetric(
+                horizontal: 32,
+                vertical: 16,
+              ),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+          ),
+        ),
+        
+        // Çıkış butonu - Sayfanın altına eklendi
+        Container(
+          margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
           child: ElevatedButton.icon(
             onPressed: () => _showLogoutDialog(),
             icon: const Icon(Icons.logout, color: Colors.white),
@@ -1021,6 +1794,16 @@ class _BusinessManagementScreenState extends State<BusinessManagementScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  /// Excel import ekranına git
+  void _navigateToExcelImport() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const ExcelImportScreen(),
       ),
     );
   }

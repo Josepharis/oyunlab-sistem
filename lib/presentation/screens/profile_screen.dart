@@ -67,12 +67,9 @@ class _ProfileScreenState extends State<ProfileScreen>
     _shiftService = ShiftService();
     _saleService = SaleService();
 
-    // Firebase Auth state listener'ı ekle
-    FirebaseAuth.instance.authStateChanges().listen((User? user) {
-      if (mounted) {
-        _updateUserInfo();
-      }
-    });
+    // AdminAuthService değişikliklerini dinle
+    final adminAuthService = Provider.of<AdminAuthService>(context, listen: false);
+    adminAuthService.addListener(_onAuthStateChanged);
 
     // Kullanıcı bilgilerini güncelle
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -81,6 +78,13 @@ class _ProfileScreenState extends State<ProfileScreen>
     
     // Real-time satış stream'ini başlat
     _startSalesStream();
+  }
+
+  // Auth state değişikliklerini dinle
+  void _onAuthStateChanged() {
+    if (mounted) {
+      _updateUserInfo();
+    }
   }
 
   // Kullanıcı bilgilerini güncelle ve verileri yükle
@@ -288,6 +292,10 @@ class _ProfileScreenState extends State<ProfileScreen>
 
   @override
   void dispose() {
+    // AdminAuthService listener'ını temizle
+    final adminAuthService = Provider.of<AdminAuthService>(context, listen: false);
+    adminAuthService.removeListener(_onAuthStateChanged);
+    
     _tabController.dispose();
     _shiftTimer?.cancel();
     _salesStreamSubscription?.cancel();
@@ -1107,9 +1115,59 @@ class _ProfileScreenState extends State<ProfileScreen>
     }
 
     if (_shiftHistory.isEmpty) {
-      return _buildEmptyState(
-        'Mesai Kaydı Bulunamadı',
-        'Henüz mesai kaydı bulunmuyor.',
+      return Column(
+        children: [
+          // Tarih seçici
+          Container(
+            margin: const EdgeInsets.all(16),
+            child: InkWell(
+              onTap: _selectShiftDateRange,
+              borderRadius: BorderRadius.circular(12),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                decoration: BoxDecoration(
+                  color: AppTheme.primaryColor.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppTheme.primaryColor.withOpacity(0.3)),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.date_range,
+                          size: 20,
+                          color: AppTheme.primaryColor,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Tarih Aralığı: ${DateFormat('d MMM yyyy', 'tr_TR').format(_shiftStartDate)} - ${DateFormat('d MMM yyyy', 'tr_TR').format(_shiftEndDate)}',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                            color: AppTheme.primaryColor,
+                          ),
+                        ),
+                      ],
+                    ),
+                    Icon(
+                      Icons.keyboard_arrow_down,
+                      color: AppTheme.primaryColor,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          // Boş durum
+          Expanded(
+            child: _buildEmptyState(
+              'Mesai Kaydı Bulunamadı',
+              'Henüz mesai kaydı bulunmuyor.',
+            ),
+          ),
+        ],
       );
     }
 
@@ -1380,9 +1438,59 @@ class _ProfileScreenState extends State<ProfileScreen>
     }
 
     if (_salesHistory.isEmpty) {
-      return _buildEmptyState(
-        'Satış Kaydı Bulunamadı',
-        'Henüz satış kaydı bulunmuyor.',
+      return Column(
+        children: [
+          // Tarih seçici
+          Container(
+            margin: const EdgeInsets.all(16),
+            child: InkWell(
+              onTap: _selectSalesDateRange,
+              borderRadius: BorderRadius.circular(12),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                decoration: BoxDecoration(
+                  color: AppTheme.primaryColor.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppTheme.primaryColor.withOpacity(0.3)),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.date_range,
+                          size: 20,
+                          color: AppTheme.primaryColor,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Tarih Aralığı: ${DateFormat('d MMM yyyy', 'tr_TR').format(_salesStartDate)} - ${DateFormat('d MMM yyyy', 'tr_TR').format(_salesEndDate)}',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                            color: AppTheme.primaryColor,
+                          ),
+                        ),
+                      ],
+                    ),
+                    Icon(
+                      Icons.keyboard_arrow_down,
+                      color: AppTheme.primaryColor,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          // Boş durum
+          Expanded(
+            child: _buildEmptyState(
+              'Satış Kaydı Bulunamadı',
+              'Henüz satış kaydı bulunmuyor.',
+            ),
+          ),
+        ],
       );
     }
 

@@ -18,8 +18,13 @@ import 'package:flutter/services.dart';
 
 class TableOrderScreen extends StatefulWidget {
   final CustomerRepository customerRepository;
+  final int? filterTableNumber; // Aslında bilet numarası
 
-  const TableOrderScreen({super.key, required this.customerRepository});
+  const TableOrderScreen({
+    super.key, 
+    required this.customerRepository,
+    this.filterTableNumber,
+  });
 
   @override
   State<TableOrderScreen> createState() => _TableOrderScreenState();
@@ -42,6 +47,8 @@ class _TableOrderScreenState extends State<TableOrderScreen>
   @override
   void initState() {
     super.initState();
+    print("🚀 TableOrderScreen initState başladı");
+    
     // Menü repository'den verileri yeniden yükle
     _loadProducts();
 
@@ -75,6 +82,28 @@ class _TableOrderScreenState extends State<TableOrderScreen>
 
     // Her gün masa numaralarını sıfırla
     _checkAndResetTableNumbers();
+    
+    // Eğer masa numarası filtrelenmişse, o masayı bul ve detay ekranına geç
+    if (widget.filterTableNumber != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _navigateToFilteredTable();
+      });
+    }
+  }
+
+  @override
+  void didUpdateWidget(TableOrderScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    print('🔄 TABLE_ORDER_SCREEN: didUpdateWidget çağrıldı - Eski: ${oldWidget.filterTableNumber}, Yeni: ${widget.filterTableNumber}');
+    
+    // Eğer filterTableNumber değiştiyse, yeni masaya git
+    if (widget.filterTableNumber != null && 
+        widget.filterTableNumber != oldWidget.filterTableNumber) {
+      print('🔄 TABLE_ORDER_SCREEN: filterTableNumber değişti, yeni masaya gidiliyor...');
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _navigateToFilteredTable();
+      });
+    }
   }
 
   // Firebase'den masaları yükle
@@ -89,6 +118,48 @@ class _TableOrderScreenState extends State<TableOrderScreen>
       }
     } catch (e) {
       print("Masa yükleme hatası: $e");
+    }
+  }
+
+  // Filtrelenmiş masaya geçiş yap
+  void _navigateToFilteredTable() {
+    print('🔍 _navigateToFilteredTable çağrıldı - filterTableNumber: ${widget.filterTableNumber}');
+    
+    if (widget.filterTableNumber == null) {
+      print('❌ filterTableNumber null, işlem iptal edildi');
+      return;
+    }
+    
+    print('📊 Mevcut masa sayısı: ${_tableOrders.length}');
+    print('📋 Mevcut masalar: ${_tableOrders.map((t) => 'Masa ${t.tableNumber} - Bilet ${t.ticketNumber}').join(', ')}');
+    
+    // Masa verilerinin yüklenmesini bekle
+    if (_tableOrders.isEmpty) {
+      print('⏳ Masa listesi boş, 500ms bekleniyor...');
+      Future.delayed(const Duration(milliseconds: 500), () {
+        if (mounted) {
+          print('🔄 Tekrar denenecek...');
+          _navigateToFilteredTable();
+        }
+      });
+      return;
+    }
+    
+    try {
+      print('🔍 Bilet numarası ${widget.filterTableNumber} aranıyor...');
+      // Belirtilen bilet numarasına sahip masayı bul
+      final targetTable = _tableOrders.firstWhere(
+        (table) => table.ticketNumber == widget.filterTableNumber,
+      );
+      
+      print('✅ Masa bulundu: Masa ${targetTable.tableNumber}, Bilet ${targetTable.ticketNumber}');
+      // Masa detay ekranına geç
+      _showTableDetail(targetTable);
+      print('✅ Masa detay ekranına geçildi: Bilet ${widget.filterTableNumber}, Masa ${targetTable.tableNumber}');
+    } catch (e) {
+      print('❌ Bilet numarasına sahip masa bulunamadı: ${widget.filterTableNumber}');
+      print('❌ Hata: $e');
+      print('Mevcut masalar: ${_tableOrders.map((t) => 'Masa ${t.tableNumber} - Bilet ${t.ticketNumber}').join(', ')}');
     }
   }
 
@@ -133,16 +204,26 @@ class _TableOrderScreenState extends State<TableOrderScreen>
   // Menüyü yükle
   Future<void> _loadProducts() async {
     try {
+      print("🔄 Ürünler yükleniyor...");
       await _menuRepository.loadMenuItems();
 
       if (mounted) {
         setState(() {
-          // Sessizce menüyü güncelle, bildirim gösterme
+          products = _menuRepository.menuItems;
+          isLoading = false;
         });
+        print("✅ ${products.length} ürün yüklendi");
+        
+        // Oyuncak kategorisindeki ürünleri kontrol et
+        final toyProducts = products.where((product) => product.category == ProductCategory.toy).toList();
+        print("🧸 Oyuncak kategorisinde ${toyProducts.length} ürün bulundu");
       }
     } catch (e) {
-      print("Menü yükleme hatası: $e");
+      print("❌ Menü yükleme hatası: $e");
       if (mounted) {
+        setState(() {
+          isLoading = false;
+        });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text("Menü yüklenirken hata oluştu: $e"),
@@ -163,11 +244,18 @@ class _TableOrderScreenState extends State<TableOrderScreen>
     try {
       await _menuRepository.loadMenuItems();
       if (mounted) {
-        setState(() {});
+        setState(() {
+          products = _menuRepository.menuItems;
+          isLoading = false;
+        });
+        print("✅ _loadMenuItems: ${products.length} ürün yüklendi");
       }
     } catch (e) {
-      print("Menü yükleme hatası: $e");
+      print("❌ Menü yükleme hatası: $e");
       if (mounted) {
+        setState(() {
+          isLoading = false;
+        });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text("Menü yüklenirken hata oluştu: $e"),
@@ -526,7 +614,7 @@ class _TableOrderScreenState extends State<TableOrderScreen>
     );
   }
 
-  // Masa silme
+  // Masa silme (stok geri yükleme ile)
   void _deleteTable(TableOrder table) async {
     try {
       // Masa silinmeden önce ürünleri stoğa geri ekle
@@ -540,27 +628,28 @@ class _TableOrderScreenState extends State<TableOrderScreen>
         _tableOrders.remove(table);
       });
 
-      // Başarı mesajı
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Masa #${table.tableNumber} silindi ve ürünler stoğa geri eklendi'),
-            backgroundColor: Colors.green.shade600,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
+      // Başarı mesajı kaldırıldı
     } catch (e) {
       print('Masa silinirken hata: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Masa silinirken hata: $e'),
-            backgroundColor: Colors.red.shade600,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
+    }
+  }
+
+  // Ödeme alındığında masa silme (stok geri yükleme olmadan)
+  void _deleteTableAfterPayment(TableOrder table) async {
+    try {
+      // Stok geri yükleme YOK - ödeme alındı, ürünler satıldı
+      
+      // Firebase'den sil
+      await _tableOrderRepository.deleteTable(table.tableNumber);
+
+      // UI'dan kaldır
+      setState(() {
+        _tableOrders.remove(table);
+      });
+
+      // Başarı mesajı kaldırıldı
+    } catch (e) {
+      print('Masa silinirken hata: $e');
     }
   }
 
@@ -642,17 +731,6 @@ class _TableOrderScreenState extends State<TableOrderScreen>
     
     print('✅ Firebase güncellendi: #${table.tableNumber} - Sipariş: ${order.productName} x${order.quantity}');
     
-    // Başarı mesajı göster
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('${order.productName} x${order.quantity} masaya eklendi'),
-          backgroundColor: Colors.green.shade600,
-          behavior: SnackBarBehavior.floating,
-          duration: const Duration(seconds: 2),
-        ),
-      );
-    }
   }
 
   // Sipariş tamamlama
@@ -700,6 +778,7 @@ class _TableOrderScreenState extends State<TableOrderScreen>
           onCompleteOrder: (orderId) => _completeOrder(table, orderId),
           onRemoveOrder: (orderId) => _removeOrder(table, orderId),
           onDeleteTable: _deleteTable,
+          onDeleteTableAfterPayment: _deleteTableAfterPayment,
           getCurrentTable: () => _tableOrders.firstWhere(
             (t) => t.tableNumber == table.tableNumber,
             orElse: () => table,
@@ -752,12 +831,6 @@ class _TableOrderScreenState extends State<TableOrderScreen>
         return Icons.cake;
       case ProductCategory.toy:
         return Icons.toys;
-      case ProductCategory.game:
-        return Icons.gamepad;
-      case ProductCategory.coding:
-        return Icons.code;
-      case ProductCategory.other:
-        return Icons.more_horiz;
     }
   }
 
@@ -1018,6 +1091,77 @@ class _TableOrderScreenState extends State<TableOrderScreen>
                     ),
                   ),
                   style: const TextStyle(fontSize: 14),
+                ),
+              ),
+
+              const SizedBox(height: 16),
+
+              // Oyuncak Satış Bölümü
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.05),
+                      blurRadius: 5,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.toys_rounded,
+                          color: AppTheme.accentColor,
+                          size: 20,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Oyuncak Satışı',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: AppTheme.primaryTextColor,
+                          ),
+                        ),
+                        const Spacer(),
+                        Flexible(
+                          child: Text(
+                            'Masa açmadan satış',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: AppTheme.secondaryTextColor,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Center(
+                      child: ElevatedButton.icon(
+                        onPressed: _showToySearchDialog,
+                        icon: const Icon(Icons.search, size: 16),
+                        label: const Text('Oyuncak Sat'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppTheme.accentColor,
+                          foregroundColor: Colors.white,
+                          elevation: 0,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 12,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
 
@@ -1441,6 +1585,305 @@ class _TableOrderScreenState extends State<TableOrderScreen>
       ),
     );
   }
+
+
+  // Oyuncak satış onay dialogunu göster
+  void _showToySaleConfirmation(ProductItem product) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Row(
+            children: [
+              Icon(Icons.shopping_cart, color: AppTheme.accentColor),
+              const SizedBox(width: 8),
+              const Text('Satış Onayı'),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Ürün bilgileri
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade50,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.grey.shade200),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.toys_rounded,
+                          color: AppTheme.accentColor,
+                          size: 24,
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                product.name,
+                                style: const TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              if (product.description != null) ...[
+                                const SizedBox(height: 4),
+                                Text(
+                                  product.description!,
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    color: Colors.grey.shade600,
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Stok',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey.shade600,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: product.stock > 0 ? Colors.green.shade50 : Colors.red.shade50,
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(
+                                '${product.stock} adet',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.bold,
+                                  color: product.stock > 0 ? Colors.green.shade700 : Colors.red.shade700,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Text(
+                              'Fiyat',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey.shade600,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: Colors.green.shade50,
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: Colors.green.shade200),
+                              ),
+                              child: Text(
+                                '${product.price.toStringAsFixed(2)}₺',
+                                style: TextStyle(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.green.shade700,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              // Uyarı mesajı
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.orange.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.orange.shade200),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.info_outline,
+                      color: Colors.orange.shade700,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Bu ürün masa açmadan direkt satışa kaydedilecektir.',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.orange.shade700,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('İptal'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                _confirmToySale(product);
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.accentColor,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+              child: const Text('Satışı Onayla'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  // Oyuncak satışını onayla ve kaydet
+  void _confirmToySale(ProductItem product) async {
+    try {
+      // Direkt satış kaydı oluştur
+      final now = DateTime.now();
+      final saleRecord = SaleRecord(
+        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        userId: FirebaseAuth.instance.currentUser?.uid ?? '',
+        userName: 'Sistem', // Gerçek uygulamada kullanıcı adı alınmalı
+        customerName: 'Oyuncak Satışı',
+        amount: product.price,
+        description: '${product.name} - Oyuncak Satışı',
+        date: now,
+        customerPhone: '',
+        items: [product.name],
+        paymentMethod: 'Nakit',
+        status: 'Tamamlandı',
+        createdAt: now,
+        updatedAt: now,
+      );
+
+      await _saleService.createSale(saleRecord);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${product.name} satışı kaydedildi: ${product.price.toStringAsFixed(2)}₺'),
+            backgroundColor: Colors.green,
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Satış kaydedilirken hata oluştu: $e'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
+  }
+
+  // Oyuncak arama dialogunu göster
+  void _showToySearchDialog() async {
+    print("🔍 Oyuncak arama dialogu açılıyor...");
+    print("📦 Mevcut ürün sayısı: ${products.length}");
+    
+    // Önce ürünleri yükle
+    if (products.isEmpty) {
+      print("⚠️ Ürünler boş, yükleniyor...");
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Ürünler yükleniyor, lütfen bekleyin...'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      
+      // Ürünleri yüklemeyi dene
+      await _loadProducts();
+      
+      // Eğer hala boşsa, tekrar kontrol et
+      if (products.isEmpty) {
+        print("❌ Ürünler yüklenemedi");
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Ürünler yüklenemedi, lütfen tekrar deneyin'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+    }
+
+    // Oyuncak kategorisindeki ürünleri filtrele
+    final toyProducts = products.where((product) => 
+      product.category == ProductCategory.toy
+    ).toList();
+    
+    print("🧸 Oyuncak kategorisinde ${toyProducts.length} ürün bulundu");
+    for (var toy in toyProducts) {
+      print("  - ${toy.name} (Stok: ${toy.stock}, Fiyat: ${toy.price})");
+    }
+
+    if (toyProducts.isEmpty) {
+      print("❌ Oyuncak kategorisinde ürün bulunamadı");
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Stokta oyuncak bulunmuyor'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return ToySearchDialog(
+          products: toyProducts,
+          onToySelected: (product) {
+            Navigator.of(context).pop();
+            _showToySaleConfirmation(product);
+          },
+        );
+      },
+    );
+  }
 }
 
 // Masa Detay Ekranı
@@ -1450,6 +1893,7 @@ class TableDetailScreen extends StatefulWidget {
   final Function(String) onCompleteOrder;
   final Function(String) onRemoveOrder;
   final Function(TableOrder) onDeleteTable;
+  final Function(TableOrder) onDeleteTableAfterPayment;
   final Function() getCurrentTable;
 
   const TableDetailScreen({
@@ -1459,6 +1903,7 @@ class TableDetailScreen extends StatefulWidget {
     required this.onCompleteOrder,
     required this.onRemoveOrder,
     required this.onDeleteTable,
+    required this.onDeleteTableAfterPayment,
     required this.getCurrentTable,
   }) : super(key: key);
 
@@ -1558,51 +2003,81 @@ class _TableDetailScreenState extends State<TableDetailScreen>
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 1,
-        title: Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Masa ${currentTable.tableNumber} - ${currentTable.customerName}',
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.black87,
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                    maxLines: 1,
+        title: LayoutBuilder(
+          builder: (context, constraints) {
+            final screenWidth = constraints.maxWidth;
+            final isSmallScreen = screenWidth < 400;
+            
+            return Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Masa ${currentTable.tableNumber} - ${currentTable.customerName}',
+                        style: TextStyle(
+                          fontSize: isSmallScreen ? 14 : 16,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.black87,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
+                      ),
+                      Text(
+                        '${currentTable.childCount} çocuk${currentTable.isManual ? " • Manuel" : ""}',
+                        style: TextStyle(
+                          fontSize: isSmallScreen ? 11 : 12, 
+                          color: Colors.grey[600]
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
+                      ),
+                    ],
                   ),
-                  Text(
-                    '${currentTable.childCount} çocuk${currentTable.isManual ? " • Manuel" : ""}',
-                    style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-                    overflow: TextOverflow.ellipsis,
-                    maxLines: 1,
-                  ),
-                ],
-              ),
-            ),
-          ],
+                ),
+              ],
+            );
+          },
         ),
         actions: [
-          // Yeni Sipariş Butonu
-          Padding(
-            padding: const EdgeInsets.only(right: 16.0),
-            child: ElevatedButton.icon(
-              onPressed: _showAddOrderDialog,
-              icon: const Icon(Icons.add_rounded, size: 18),
-              label: const Text('Yeni Sipariş'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppTheme.primaryColor,
-                foregroundColor: Colors.white,
-                elevation: 0,
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-              ),
-            ),
+          // Responsive Yeni Sipariş Butonu
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final screenWidth = constraints.maxWidth;
+              final isSmallScreen = screenWidth < 400;
+              
+              return Padding(
+                padding: const EdgeInsets.only(right: 16.0),
+                child: isSmallScreen
+                    ? IconButton(
+                        onPressed: _showAddOrderDialog,
+                        icon: const Icon(Icons.add_rounded, size: 20),
+                        tooltip: 'Yeni Sipariş',
+                        style: IconButton.styleFrom(
+                          backgroundColor: AppTheme.primaryColor,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                      )
+                    : ElevatedButton.icon(
+                        onPressed: _showAddOrderDialog,
+                        icon: const Icon(Icons.add_rounded, size: 18),
+                        label: const Text('Yeni Sipariş'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppTheme.primaryColor,
+                          foregroundColor: Colors.white,
+                          elevation: 0,
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                      ),
+              );
+            },
           ),
         ],
         leading: IconButton(
@@ -1900,12 +2375,6 @@ class _TableDetailScreenState extends State<TableDetailScreen>
           },
           onDismissed: (direction) {
             widget.onRemoveOrder(order.id);
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text('${order.productName} siparişi silindi'),
-                action: SnackBarAction(label: 'Tamam', onPressed: () {}),
-              ),
-            );
           },
           child: ListTile(
             contentPadding: const EdgeInsets.symmetric(
@@ -2368,8 +2837,8 @@ class _TableDetailScreenState extends State<TableDetailScreen>
                             Navigator.pop(context); // Dialog'u kapat
                             Navigator.pop(context); // Detay sayfasını kapat
 
-                            // Masayı sil
-                            widget.onDeleteTable(currentTable);
+                            // Masayı sil (stok geri yükleme olmadan)
+                            widget.onDeleteTableAfterPayment(currentTable);
                             
                             // Satışlar ekranını yenile (eğer açıksa)
                             // Bu işlem otomatik olarak stream güncellemesi ile yapılacak
@@ -3325,12 +3794,6 @@ class _ProductSelectionSheetState extends State<ProductSelectionSheet>
         return Icons.cake_rounded;
       case ProductCategory.toy:
         return Icons.toys_rounded;
-      case ProductCategory.game:
-        return Icons.sports_esports_rounded;
-      case ProductCategory.coding:
-        return Icons.code_rounded;
-      case ProductCategory.other:
-        return Icons.category_rounded;
     }
   }
 
@@ -3373,13 +3836,6 @@ class _ProductSelectionSheetState extends State<ProductSelectionSheet>
     try {
       // Stok kontrolü
       if (product.stock < quantity) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Yetersiz stok! Mevcut: ${product.stock}, İstenen: $quantity'),
-            backgroundColor: Colors.red.shade600,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
         return;
       }
 
@@ -3400,13 +3856,6 @@ class _ProductSelectionSheetState extends State<ProductSelectionSheet>
         
         // Toplam miktar stoktan fazla mı kontrol et
         if (newTotalQuantity > product.stock) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Yetersiz stok! Mevcut: ${product.stock}, Toplam istenen: $newTotalQuantity'),
-              backgroundColor: Colors.red.shade600,
-              behavior: SnackBarBehavior.floating,
-            ),
-          );
           return;
         }
         
@@ -3443,24 +3892,10 @@ class _ProductSelectionSheetState extends State<ProductSelectionSheet>
         print('📦 Yeni ürün eklendi: ${product.name} x$quantity');
       }
       
-      // Başarı mesajı
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('${product.name} x$quantity seçildi'),
-          backgroundColor: Colors.green.shade600,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      // Başarı mesajı kaldırıldı
 
     } catch (e) {
       print('Ürün seçilirken hata: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Hata: $e'),
-          backgroundColor: Colors.red.shade600,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
     }
   }
 
@@ -3514,13 +3949,6 @@ class _ProductSelectionSheetState extends State<ProductSelectionSheet>
     // Stok kontrolü - mevcut stok + sepet içindeki miktar ile karşılaştır
     final availableStock = product.stock + currentQuantity; // Sepetteki miktar geri eklenmiş stok
     if (newQuantity > availableStock) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Yetersiz stok! Mevcut: $availableStock'),
-          backgroundColor: Colors.red.shade600,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
       return;
     }
     
@@ -3930,13 +4358,6 @@ class _ProductSelectionSheetState extends State<ProductSelectionSheet>
   // Seçilen ürünleri masaya ekle
   void _addSelectedProductsToTable() async {
     if (_selectedProducts.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Lütfen en az bir ürün seçin'),
-          backgroundColor: Colors.orange.shade600,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
       return;
     }
 
@@ -3976,14 +4397,7 @@ class _ProductSelectionSheetState extends State<ProductSelectionSheet>
 
       print('✅ Tüm siparişler başarıyla eklendi!');
 
-      // Başarı mesajı
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('${_selectedProducts.length} ürün masaya eklendi'),
-          backgroundColor: Colors.green.shade600,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      // Başarı mesajı kaldırıldı
 
       // Seçilen ürünleri temizle ve ekranı kapat
       setState(() {
@@ -3993,13 +4407,6 @@ class _ProductSelectionSheetState extends State<ProductSelectionSheet>
 
     } catch (e) {
       print('❌ Ürünler masaya eklenirken hata: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Hata: $e'),
-          backgroundColor: Colors.red.shade600,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
     }
   }
 
@@ -4330,14 +4737,6 @@ class _ProductSelectionSheetState extends State<ProductSelectionSheet>
                     // Reset selected quantity for next time
                     _selectedQuantity = 1;
 
-                    // Bildirimi göster
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text('${product.name} siparişi eklendi.'),
-                        backgroundColor: Colors.green.shade700,
-                        behavior: SnackBarBehavior.floating,
-                      ),
-                    );
                   }
                   : null,
                   style: ElevatedButton.styleFrom(
@@ -4353,6 +4752,206 @@ class _ProductSelectionSheetState extends State<ProductSelectionSheet>
           },
         );
       },
+    );
+  }
+}
+
+// Oyuncak Arama Dialogu
+class ToySearchDialog extends StatefulWidget {
+  final List<ProductItem> products;
+  final Function(ProductItem) onToySelected;
+
+  const ToySearchDialog({
+    super.key,
+    required this.products,
+    required this.onToySelected,
+  });
+
+  @override
+  State<ToySearchDialog> createState() => _ToySearchDialogState();
+}
+
+class _ToySearchDialogState extends State<ToySearchDialog> {
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  // Gelen ürünler zaten oyuncak kategorisinde filtrelenmiş
+  List<ProductItem> get _filteredToys {
+    if (widget.products.isEmpty) {
+      return [];
+    }
+    
+    if (_searchQuery.isEmpty) {
+      return widget.products;
+    }
+    
+    return widget.products.where((product) {
+      return product.name.toLowerCase().contains(_searchQuery.toLowerCase()) ||
+             (product.description?.toLowerCase().contains(_searchQuery.toLowerCase()) ?? false);
+    }).toList();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final filteredToys = _filteredToys;
+    
+    return AlertDialog(
+      title: Row(
+        children: [
+          Icon(Icons.search, color: AppTheme.accentColor),
+          const SizedBox(width: 8),
+          const Text('Oyuncak Ara ve Sat'),
+        ],
+      ),
+      content: SizedBox(
+        width: double.maxFinite,
+        height: 400,
+        child: Column(
+          children: [
+            TextField(
+              controller: _searchController,
+              onChanged: (value) {
+                setState(() {
+                  _searchQuery = value;
+                });
+              },
+              decoration: const InputDecoration(
+                hintText: 'Oyuncak adı ara...',
+                prefixIcon: Icon(Icons.search),
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 16),
+            if (filteredToys.isEmpty)
+              Expanded(
+                child: Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.toys_rounded,
+                        size: 64,
+                        color: Colors.grey.shade400,
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        widget.products.isEmpty 
+                          ? 'Stokta oyuncak bulunmuyor'
+                          : 'Arama kriterlerine uygun oyuncak bulunamadı',
+                        style: TextStyle(
+                          fontSize: 16,
+                          color: Colors.grey.shade600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              )
+            else
+              Expanded(
+                child: ListView.builder(
+                  itemCount: filteredToys.length,
+                  itemBuilder: (context, index) {
+                    final product = filteredToys[index];
+                    return Card(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      child: ListTile(
+                        leading: Icon(
+                          Icons.toys_rounded,
+                          color: AppTheme.accentColor,
+                        ),
+                        title: Text(
+                          product.name,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                          ),
+                        ),
+                        subtitle: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (product.description != null) ...[
+                              const SizedBox(height: 4),
+                              Text(
+                                product.description!,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey.shade600,
+                                ),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.inventory_2_rounded,
+                                  size: 14,
+                                  color: product.stock > 0 ? Colors.green : Colors.red,
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  'Stok: ${product.stock}',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: product.stock > 0 ? Colors.green.shade700 : Colors.red.shade700,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                                const Spacer(),
+                                Text(
+                                  '${product.price.toStringAsFixed(2)}₺',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.green.shade700,
+                                    fontSize: 16,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                        trailing: ElevatedButton(
+                          onPressed: product.stock > 0 ? () {
+                            widget.onToySelected(product);
+                          } : null,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: product.stock > 0 
+                              ? AppTheme.accentColor 
+                              : Colors.grey.shade400,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                          child: Text(
+                            product.stock > 0 ? 'Sat' : 'Stok Yok',
+                            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('İptal'),
+        ),
+      ],
     );
   }
 }

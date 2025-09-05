@@ -6,6 +6,7 @@ import '../../data/repositories/staff_repository.dart';
 import '../../data/repositories/task_repository.dart';
 import '../../data/repositories/issue_repository.dart';
 import '../../data/services/firebase_service.dart';
+import '../../data/services/sale_service.dart';
 
 /// Servis locator sınıfı, uygulama genelinde servis ve repository'lere
 /// tek bir yerden erişim sağlar. Dependency Injection'ı basit şekilde uygular.
@@ -26,6 +27,11 @@ class ServiceLocator {
 
         // Servisin başlatma işleminin tamamlanmasını bekle (isteğe bağlı)
         await Future.delayed(const Duration(seconds: 1));
+      }
+
+      // SaleService'i kaydet
+      if (!locator.isRegistered<SaleService>()) {
+        locator.registerLazySingleton<SaleService>(() => SaleService());
       }
 
       // Repository'ler

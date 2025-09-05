@@ -190,6 +190,7 @@ class _TaskManagementScreenState extends State<TaskManagementScreen>
         ],
       ),
       floatingActionButton: FloatingActionButton(
+        heroTag: 'task_management_fab',
         onPressed: _createTask,
         backgroundColor: Theme.of(context).colorScheme.primary,
         child: const Icon(Icons.add, color: Colors.white),
