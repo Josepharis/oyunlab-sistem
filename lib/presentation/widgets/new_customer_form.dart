@@ -77,6 +77,13 @@ class _NewCustomerFormState extends State<NewCustomerForm>
     'Özel Gün': 0.0, // Şimdilik indirim yok
   };
 
+  // Çocuk sayısı ve kardeş girişi için değişkenler
+  int _childCount = 1;
+  int _siblingCount = 0;
+
+  // Ödeme yöntemi seçimi
+  String _selectedPaymentMethod = 'Nakit';
+
   @override
   void initState() {
     super.initState();
@@ -288,10 +295,11 @@ class _NewCustomerFormState extends State<NewCustomerForm>
         remainingMinutes: totalSeconds ~/ 60, // İlk statik kalan süre = toplam süre
         remainingSeconds: totalSeconds % 60, // İlk statik kalan süre saniye
         price: _calculateFinalPrice(),
-        childCount: 1, // Yeni müşteri için 1 çocuk
+        childCount: _childCount, // Kullanıcının seçtiği çocuk sayısı
         siblingIds: [], // Yeni müşteri için boş liste
         hasTimePurchase: !(_isUsingRemainingTime && _selectedDuration == 0), // Sadece kalan süre kullanılmıyorsa satın alma var
         purchasedSeconds: _isUsingRemainingTime && _selectedDuration == 0 ? 0 : (_selectedDuration * 60), // Bu girişte satın alınan süre
+        paymentMethod: _selectedPaymentMethod, // Seçilen ödeme yöntemi
       );
 
       // Kaydet
@@ -469,10 +477,26 @@ class _NewCustomerFormState extends State<NewCustomerForm>
       return 0.0;
     }
     
+    // Temel fiyat
+    double basePrice = _selectedDurationPrice!.price;
+    
+    // Kardeş indirimi sadece 60 dakika girişinde uygulanır
+    bool isHourlyEntry = _selectedDuration == 60;
+    
+    double totalPrice;
+    
+    if (isHourlyEntry && _siblingCount > 0) {
+      // 60 dakika girişinde kardeş indirimi: Normal fiyat - (kardeş sayısı × 50₺)
+      totalPrice = (basePrice * _childCount) - (_siblingCount * 50.0);
+      if (totalPrice < 0) totalPrice = 0; // Negatif fiyat olmasın
+    } else {
+      // Diğer durumlarda normal çarpım
+      totalPrice = basePrice * _childCount;
+    }
+    
     // İndirim hesaplama
     final discountRate = _discountRates[_selectedDiscountType] ?? 0.0;
-    final originalPrice = _selectedDurationPrice!.price;
-    final discountedPrice = originalPrice * (1 - discountRate);
+    final discountedPrice = totalPrice * (1 - discountRate);
     
     return discountedPrice;
   }
@@ -538,34 +562,45 @@ class _NewCustomerFormState extends State<NewCustomerForm>
 
   // Yeni Kayıt Tab İçeriği
   Widget _buildNewCustomerTab() {
-    return SingleChildScrollView(
-      physics: const BouncingScrollPhysics(),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 14.0, vertical: 10.0),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Kişisel Bilgiler Kartı
-              _buildPersonalInfoCard(),
+    final screenHeight = MediaQuery.of(context).size.height;
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isVerySmallScreen = screenHeight < 700;
+    final isSmallScreen = screenHeight < 800;
+    final isNarrowScreen = screenWidth < 400;
+    
+    return Padding(
+      padding: EdgeInsets.symmetric(
+        horizontal: isNarrowScreen ? screenWidth * 0.02 : screenWidth * 0.03,
+        vertical: isVerySmallScreen ? 2.0 : 4.0,
+      ),
+      child: Form(
+        key: _formKey,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Kişisel Bilgiler Kartı
+            _buildPersonalInfoCard(),
 
-              const SizedBox(height: 14),
+            SizedBox(height: isVerySmallScreen ? 4 : (isSmallScreen ? 6 : 8)),
 
-              // Süre Seçimi Kartı
-              _buildDurationCard(),
+            // Süre Seçimi Kartı
+            _buildDurationCard(),
 
-              const SizedBox(height: 12),
+            SizedBox(height: isVerySmallScreen ? 4 : (isSmallScreen ? 6 : 8)),
 
-              // Ödenecek Tutar Bilgisi
-              if (_selectedDurationPrice != null || (_isUsingRemainingTime && _selectedDuration == 0)) _buildPaymentInfoCard(),
+            // Ödeme Yöntemi Seçimi
+            if (_selectedDurationPrice != null || (_isUsingRemainingTime && _selectedDuration == 0)) _buildPaymentMethodCard(),
 
-              const SizedBox(height: 12),
+            SizedBox(height: isVerySmallScreen ? 4 : (isSmallScreen ? 6 : 8)),
 
-              // Kaydet Butonu
-              _buildSaveButton(),
-            ],
-          ),
+            // Ödenecek Tutar Bilgisi
+            if (_selectedDurationPrice != null || (_isUsingRemainingTime && _selectedDuration == 0)) _buildPaymentInfoCard(),
+
+            SizedBox(height: isVerySmallScreen ? 4 : (isSmallScreen ? 6 : 8)),
+
+            // Kaydet Butonu
+            _buildSaveButton(),
+          ],
         ),
       ),
     );
@@ -573,10 +608,19 @@ class _NewCustomerFormState extends State<NewCustomerForm>
 
   // Diğerleri Tab İçeriği
   Widget _buildOthersTab() {
+    final screenHeight = MediaQuery.of(context).size.height;
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isVerySmallScreen = screenHeight < 600;
+    final isSmallScreen = screenHeight < 700;
+    final isNarrowScreen = screenWidth < 400;
+    
     return SingleChildScrollView(
       physics: const BouncingScrollPhysics(),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 14.0, vertical: 10.0),
+        padding: EdgeInsets.symmetric(
+          horizontal: isNarrowScreen ? screenWidth * 0.02 : screenWidth * 0.03,
+          vertical: isVerySmallScreen ? 4.0 : 8.0,
+        ),
         child: Form(
           key: GlobalKey<FormState>(),
           child: Column(
@@ -585,17 +629,17 @@ class _NewCustomerFormState extends State<NewCustomerForm>
               // Kategori Seçimi Kartı
               _buildCategorySelectionCard(),
               
-              const SizedBox(height: 14),
+              SizedBox(height: isVerySmallScreen ? 6 : (isSmallScreen ? 8 : MediaQuery.of(context).size.height * 0.01)),
               
               // Kişisel Bilgiler Kartı
               _buildOthersPersonalInfoCard(),
               
-              const SizedBox(height: 14),
+              SizedBox(height: isVerySmallScreen ? 6 : (isSmallScreen ? 8 : MediaQuery.of(context).size.height * 0.01)),
               
               // Tutar Bilgisi Kartı
               _buildOthersAmountCard(),
               
-              const SizedBox(height: 12),
+              SizedBox(height: isVerySmallScreen ? 4 : (isSmallScreen ? 6 : MediaQuery.of(context).size.height * 0.008)),
               
               // Kaydet Butonu
               _buildOthersSaveButton(),
@@ -608,14 +652,18 @@ class _NewCustomerFormState extends State<NewCustomerForm>
 
   // Kategori Seçimi Kartı
   Widget _buildCategorySelectionCard() {
+    final screenHeight = MediaQuery.of(context).size.height;
+    final isVerySmallScreen = screenHeight < 600;
+    final isSmallScreen = screenHeight < 700;
+    
     return Card(
       margin: EdgeInsets.zero,
       elevation: 0,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(isVerySmallScreen ? 8 : (isSmallScreen ? 12 : 16))),
       color: Colors.white,
       surfaceTintColor: Colors.white,
       child: Padding(
-        padding: const EdgeInsets.all(14),
+        padding: EdgeInsets.all(isVerySmallScreen ? 8 : (isSmallScreen ? 10 : 12)),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -623,56 +671,78 @@ class _NewCustomerFormState extends State<NewCustomerForm>
             Row(
               children: [
                 Container(
-                  padding: const EdgeInsets.all(8),
+                  padding: EdgeInsets.all(isVerySmallScreen ? 4 : (isSmallScreen ? 6 : 8)),
                   decoration: BoxDecoration(
                     color: AppTheme.primaryColor.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: BorderRadius.circular(isVerySmallScreen ? 6 : (isSmallScreen ? 8 : 10)),
                   ),
-                  child: const Icon(
+                  child: Icon(
                     Icons.category_rounded,
                     color: AppTheme.primaryColor,
-                    size: 20,
+                    size: isVerySmallScreen ? 14 : (isSmallScreen ? 16 : 20),
                   ),
                 ),
-                const SizedBox(width: 10),
-                const Text(
+                SizedBox(width: isVerySmallScreen ? 6 : (isSmallScreen ? 8 : 10)),
+                Text(
                   'Kategori Seçimi',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  style: TextStyle(
+                    fontSize: isVerySmallScreen ? 14 : (isSmallScreen ? 16 : 18), 
+                    fontWeight: FontWeight.bold
+                  ),
                 ),
               ],
             ),
-            const SizedBox(height: 16),
+            SizedBox(height: isVerySmallScreen ? 8 : (isSmallScreen ? 12 : 16)),
             
             // Dropdown
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              padding: EdgeInsets.symmetric(
+                horizontal: isVerySmallScreen ? 8 : (isSmallScreen ? 12 : 16), 
+                vertical: isVerySmallScreen ? 1 : (isSmallScreen ? 2 : 4)
+              ),
               decoration: BoxDecoration(
                 color: Colors.grey.shade50,
-                borderRadius: BorderRadius.circular(16),
+                borderRadius: BorderRadius.circular(isVerySmallScreen ? 8 : (isSmallScreen ? 12 : 16)),
                 border: Border.all(color: Colors.grey.shade300),
               ),
               child: DropdownButtonHideUnderline(
                 child: DropdownButton<String>(
                   value: _selectedCategory,
-                  hint: const Text(
+                  hint: Text(
                     'Kategori seçiniz',
-                    style: TextStyle(color: Colors.grey),
+                    style: TextStyle(
+                      color: Colors.grey,
+                      fontSize: isVerySmallScreen ? 12 : (isSmallScreen ? 14 : 16),
+                    ),
                   ),
                   isExpanded: true,
-                  icon: Icon(Icons.keyboard_arrow_down, color: AppTheme.primaryColor),
-                  items: const [
+                  icon: Icon(
+                    Icons.keyboard_arrow_down, 
+                    color: AppTheme.primaryColor,
+                    size: isVerySmallScreen ? 16 : (isSmallScreen ? 18 : 20),
+                  ),
+                  items: [
                     DropdownMenuItem(
                       value: 'Oyun Grubu',
-                      child: Text('Oyun Grubu'),
+                      child: Text(
+                        'Oyun Grubu',
+                        style: TextStyle(fontSize: isVerySmallScreen ? 12 : (isSmallScreen ? 14 : 16)),
+                      ),
                     ),
                     DropdownMenuItem(
                       value: 'Robotik + Kodlama',
-                      child: Text('Robotik + Kodlama'),
+                      child: Text(
+                        'Robotik + Kodlama',
+                        style: TextStyle(fontSize: isVerySmallScreen ? 12 : (isSmallScreen ? 14 : 16)),
+                      ),
                     ),
                     DropdownMenuItem(
                       value: 'Workshop',
-                      child: Text('Workshop'),
+                      child: Text(
+                        'Workshop',
+                        style: TextStyle(fontSize: isVerySmallScreen ? 12 : (isSmallScreen ? 14 : 16)),
+                      ),
                     ),
                   ],
                   onChanged: (String? newValue) {
@@ -691,14 +761,18 @@ class _NewCustomerFormState extends State<NewCustomerForm>
 
   // Diğerleri Kişisel Bilgiler Kartı
   Widget _buildOthersPersonalInfoCard() {
+    final screenHeight = MediaQuery.of(context).size.height;
+    final isVerySmallScreen = screenHeight < 600;
+    final isSmallScreen = screenHeight < 700;
+    
     return Card(
       margin: EdgeInsets.zero,
       elevation: 0,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(isVerySmallScreen ? 8 : (isSmallScreen ? 12 : 16))),
       color: Colors.white,
       surfaceTintColor: Colors.white,
       child: Padding(
-        padding: const EdgeInsets.all(14),
+        padding: EdgeInsets.all(isVerySmallScreen ? 8 : (isSmallScreen ? 10 : 12)),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -706,25 +780,28 @@ class _NewCustomerFormState extends State<NewCustomerForm>
             Row(
               children: [
                 Container(
-                  padding: const EdgeInsets.all(8),
+                  padding: EdgeInsets.all(isVerySmallScreen ? 4 : (isSmallScreen ? 6 : 8)),
                   decoration: BoxDecoration(
                     color: AppTheme.primaryColor.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: BorderRadius.circular(isVerySmallScreen ? 6 : (isSmallScreen ? 8 : 10)),
                   ),
-                  child: const Icon(
+                  child: Icon(
                     Icons.person_rounded,
                     color: AppTheme.primaryColor,
-                    size: 20,
+                    size: isVerySmallScreen ? 14 : (isSmallScreen ? 16 : 20),
                   ),
                 ),
-                const SizedBox(width: 10),
-                const Text(
+                SizedBox(width: isVerySmallScreen ? 6 : (isSmallScreen ? 8 : 10)),
+                Text(
                   'Kişi Bilgileri',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  style: TextStyle(
+                    fontSize: isVerySmallScreen ? 14 : (isSmallScreen ? 16 : 18), 
+                    fontWeight: FontWeight.bold
+                  ),
                 ),
               ],
             ),
-            const SizedBox(height: 20),
+            SizedBox(height: isVerySmallScreen ? 8 : (isSmallScreen ? 12 : 16)),
 
             // Form Alanları
             _buildInputField(
@@ -738,7 +815,7 @@ class _NewCustomerFormState extends State<NewCustomerForm>
                 return null;
               },
             ),
-            const SizedBox(height: 12),
+            SizedBox(height: isVerySmallScreen ? 6 : (isSmallScreen ? 8 : 12)),
 
             _buildInputField(
               controller: _othersParentNameController,
@@ -759,14 +836,18 @@ class _NewCustomerFormState extends State<NewCustomerForm>
 
   // Diğerleri Tutar Kartı
   Widget _buildOthersAmountCard() {
+    final screenHeight = MediaQuery.of(context).size.height;
+    final isVerySmallScreen = screenHeight < 600;
+    final isSmallScreen = screenHeight < 700;
+    
     return Card(
       margin: EdgeInsets.zero,
       elevation: 0,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(isVerySmallScreen ? 8 : (isSmallScreen ? 12 : 16))),
       color: Colors.green.shade50,
       surfaceTintColor: Colors.green.shade50,
       child: Padding(
-        padding: const EdgeInsets.all(14),
+        padding: EdgeInsets.all(isVerySmallScreen ? 8 : (isSmallScreen ? 10 : 12)),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -774,29 +855,29 @@ class _NewCustomerFormState extends State<NewCustomerForm>
             Row(
               children: [
                 Container(
-                  padding: const EdgeInsets.all(8),
+                  padding: EdgeInsets.all(isVerySmallScreen ? 4 : (isSmallScreen ? 6 : 8)),
                   decoration: BoxDecoration(
                     color: Colors.green.shade100,
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: BorderRadius.circular(isVerySmallScreen ? 6 : (isSmallScreen ? 8 : 10)),
                   ),
                   child: Icon(
                     Icons.payment_rounded,
                     color: Colors.green.shade700,
-                    size: 20,
+                    size: isVerySmallScreen ? 14 : (isSmallScreen ? 16 : 20),
                   ),
                 ),
-                const SizedBox(width: 10),
+                SizedBox(width: isVerySmallScreen ? 6 : (isSmallScreen ? 8 : 10)),
                 Text(
                   'Tutar Bilgisi',
                   style: TextStyle(
-                    fontSize: 18,
+                    fontSize: isVerySmallScreen ? 14 : (isSmallScreen ? 16 : 18),
                     fontWeight: FontWeight.bold,
                     color: Colors.green.shade700,
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 16),
+            SizedBox(height: isVerySmallScreen ? 8 : (isSmallScreen ? 12 : 16)),
 
             // Tutar Girişi
             _buildInputField(
@@ -826,25 +907,32 @@ class _NewCustomerFormState extends State<NewCustomerForm>
 
   // Diğerleri Kaydet Butonu
   Widget _buildOthersSaveButton() {
+    final screenHeight = MediaQuery.of(context).size.height;
+    final isVerySmallScreen = screenHeight < 600;
+    final isSmallScreen = screenHeight < 700;
+    
     return SizedBox(
       width: double.infinity,
-      height: 56,
+      height: isVerySmallScreen ? 44 : (isSmallScreen ? 48 : 56),
       child: ElevatedButton.icon(
         onPressed: _isOthersLoading ? null : _saveOthers,
         icon: _isOthersLoading
             ? Container(
-                width: 20,
-                height: 20,
-                padding: const EdgeInsets.all(2),
+                width: isVerySmallScreen ? 16 : (isSmallScreen ? 18 : 20),
+                height: isVerySmallScreen ? 16 : (isSmallScreen ? 18 : 20),
+                padding: EdgeInsets.all(isVerySmallScreen ? 1 : (isSmallScreen ? 1.5 : 2)),
                 child: const CircularProgressIndicator(
                   color: Colors.white,
                   strokeWidth: 2,
                 ),
               )
-            : const Icon(Icons.check_rounded, size: 22),
+            : Icon(Icons.check_rounded, size: isVerySmallScreen ? 18 : (isSmallScreen ? 20 : 22)),
         label: Text(
           _isOthersLoading ? 'Kaydediliyor...' : 'Kaydı Tamamla',
-          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          style: TextStyle(
+            fontSize: isVerySmallScreen ? 14 : (isSmallScreen ? 16 : 18), 
+            fontWeight: FontWeight.bold
+          ),
         ),
         style: ElevatedButton.styleFrom(
           backgroundColor: AppTheme.primaryColor,
@@ -852,7 +940,7 @@ class _NewCustomerFormState extends State<NewCustomerForm>
           elevation: 4,
           shadowColor: AppTheme.primaryColor.withOpacity(0.4),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(isVerySmallScreen ? 10 : (isSmallScreen ? 12 : 16)),
           ),
         ),
       ),
@@ -860,14 +948,18 @@ class _NewCustomerFormState extends State<NewCustomerForm>
   }
 
   Widget _buildPersonalInfoCard() {
+    final screenHeight = MediaQuery.of(context).size.height;
+    final isVerySmallScreen = screenHeight < 700;
+    final isSmallScreen = screenHeight < 800;
+    
     return Card(
       margin: EdgeInsets.zero,
       elevation: 0,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(isVerySmallScreen ? 4 : (isSmallScreen ? 6 : 8))),
       color: Colors.white,
       surfaceTintColor: Colors.white,
       child: Padding(
-        padding: const EdgeInsets.all(14),
+        padding: EdgeInsets.all(isVerySmallScreen ? 4 : (isSmallScreen ? 6 : 8)),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -878,31 +970,37 @@ class _NewCustomerFormState extends State<NewCustomerForm>
                 Row(
                   children: [
                     Container(
-                      padding: const EdgeInsets.all(8),
+                      padding: EdgeInsets.all(isVerySmallScreen ? 4 : (isSmallScreen ? 6 : 8)),
                       decoration: BoxDecoration(
                         color: AppTheme.primaryColor.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(10),
+                        borderRadius: BorderRadius.circular(isVerySmallScreen ? 6 : (isSmallScreen ? 8 : 10)),
                       ),
-                      child: const Icon(
+                      child: Icon(
                         Icons.person_rounded,
                         color: AppTheme.primaryColor,
-                        size: 20,
+                        size: isVerySmallScreen ? 14 : (isSmallScreen ? 16 : 20),
                       ),
                     ),
-                    const SizedBox(width: 10),
-                    const Text(
+                    SizedBox(width: isVerySmallScreen ? 6 : (isSmallScreen ? 8 : 10)),
+                    Text(
                       'Kişi Bilgileri',
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                      style: TextStyle(
+                        fontSize: isVerySmallScreen ? 14 : (isSmallScreen ? 16 : 18), 
+                        fontWeight: FontWeight.bold
+                      ),
                     ),
                   ],
                 ),
                 
                 // Bilet Numarası
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  padding: EdgeInsets.symmetric(
+                    horizontal: isVerySmallScreen ? 6 : (isSmallScreen ? 8 : 12), 
+                    vertical: isVerySmallScreen ? 4 : (isSmallScreen ? 6 : 8)
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(isVerySmallScreen ? 6 : (isSmallScreen ? 8 : 12)),
                     border: Border.all(color: AppTheme.primaryColor.withOpacity(0.3)),
                     boxShadow: [
                       BoxShadow(
@@ -918,13 +1016,13 @@ class _NewCustomerFormState extends State<NewCustomerForm>
                       Icon(
                         Icons.confirmation_number_rounded,
                         color: AppTheme.primaryColor,
-                        size: 16,
+                        size: isVerySmallScreen ? 12 : (isSmallScreen ? 14 : 16),
                       ),
-                      const SizedBox(width: 6),
+                      SizedBox(width: isVerySmallScreen ? 3 : (isSmallScreen ? 4 : 6)),
                       Text(
                         '#${_ticketNumberController.text}',
                         style: TextStyle(
-                          fontSize: 14,
+                          fontSize: isVerySmallScreen ? 10 : (isSmallScreen ? 12 : 14),
                           fontWeight: FontWeight.bold,
                           color: AppTheme.primaryColor,
                         ),
@@ -934,7 +1032,7 @@ class _NewCustomerFormState extends State<NewCustomerForm>
                 ),
               ],
             ),
-            const SizedBox(height: 20),
+            SizedBox(height: isVerySmallScreen ? 2 : (isSmallScreen ? 3 : 16)),
 
             // Form Alanları
             _buildInputField(
@@ -948,7 +1046,7 @@ class _NewCustomerFormState extends State<NewCustomerForm>
                 return null;
               },
             ),
-            const SizedBox(height: 12),
+            SizedBox(height: isVerySmallScreen ? 4 : (isSmallScreen ? 6 : 8)),
 
             _buildInputField(
               controller: _parentNameController,
@@ -961,7 +1059,7 @@ class _NewCustomerFormState extends State<NewCustomerForm>
                 return null;
               },
             ),
-            const SizedBox(height: 12),
+            SizedBox(height: isVerySmallScreen ? 4 : (isSmallScreen ? 6 : 8)),
 
             // Telefon ve Arama Butonu
             Row(
@@ -997,32 +1095,52 @@ class _NewCustomerFormState extends State<NewCustomerForm>
                     },
                   ),
                 ),
-                const SizedBox(width: 10),
+                SizedBox(width: isSmallScreen ? 8 : 10),
                 SizedBox(
-                  height:
-                      56, // Yan yana düzgün görünmesi için TextField yüksekliği
+                  height: isSmallScreen ? 48 : 56, // Yan yana düzgün görünmesi için TextField yüksekliği
                   child: ElevatedButton(
                     onPressed:
                         _isSearchingPhone ? null : _searchCustomerByPhone,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppTheme.primaryColor,
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      padding: EdgeInsets.symmetric(horizontal: isSmallScreen ? 12 : 16),
                       elevation: 0,
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
+                        borderRadius: BorderRadius.circular(isSmallScreen ? 12 : 16),
                       ),
                     ),
                     child: _isSearchingPhone
                         ? SizedBox(
-                            width: 20,
-                            height: 20,
+                            width: isSmallScreen ? 18 : 20,
+                            height: isSmallScreen ? 18 : 20,
                             child: CircularProgressIndicator(
                               strokeWidth: 2,
                               color: Colors.white,
                             ),
                           )
-                        : Icon(Icons.search, color: Colors.white),
+                        : Icon(
+                            Icons.search, 
+                            color: Colors.white,
+                            size: isSmallScreen ? 18 : 20,
+                          ),
                   ),
+                ),
+              ],
+            ),
+
+            SizedBox(height: isVerySmallScreen ? 4 : (isSmallScreen ? 6 : 8)),
+
+            // Çocuk Sayısı ve Kardeş Girişi
+            Row(
+              children: [
+                // Çocuk Sayısı
+                Expanded(
+                  child: _buildChildCountField(),
+                ),
+                SizedBox(width: isVerySmallScreen ? 4 : (isSmallScreen ? 6 : 8)),
+                // Kardeş Girişi
+                Expanded(
+                  child: _buildSiblingCountField(),
                 ),
               ],
             ),
@@ -1030,11 +1148,14 @@ class _NewCustomerFormState extends State<NewCustomerForm>
             // Müşteri durumu bildirimi
             if (!_isPhoneFound && _phoneController.text.isNotEmpty)
               Container(
-                margin: EdgeInsets.only(top: 10),
-                padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                margin: EdgeInsets.only(top: isVerySmallScreen ? 4 : (isSmallScreen ? 6 : 8)),
+                padding: EdgeInsets.symmetric(
+                  horizontal: isVerySmallScreen ? 8 : (isSmallScreen ? 10 : 12), 
+                  vertical: isVerySmallScreen ? 4 : (isSmallScreen ? 6 : 8)
+                ),
                 decoration: BoxDecoration(
                   color: Colors.orange.shade50,
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(isVerySmallScreen ? 4 : (isSmallScreen ? 6 : 8)),
                   border: Border.all(color: Colors.orange.shade200),
                 ),
                 child: Row(
@@ -1042,15 +1163,15 @@ class _NewCustomerFormState extends State<NewCustomerForm>
                     Icon(
                       Icons.info_outline,
                       color: Colors.orange.shade800,
-                      size: 18,
+                      size: isVerySmallScreen ? 14 : (isSmallScreen ? 16 : 18),
                     ),
-                    SizedBox(width: 8),
+                    SizedBox(width: isVerySmallScreen ? 4 : (isSmallScreen ? 6 : 8)),
                     Expanded(
                       child: Text(
                         'Yeni müşteri: Lütfen çocuk ve ebeveyn bilgilerini giriniz.',
                         style: TextStyle(
                           color: Colors.orange.shade800,
-                          fontSize: 12,
+                          fontSize: isVerySmallScreen ? 10 : (isSmallScreen ? 11 : 12),
                         ),
                       ),
                     ),
@@ -1061,13 +1182,16 @@ class _NewCustomerFormState extends State<NewCustomerForm>
             // Kalan süre bilgisi gösterimi
             if (_isPhoneFound && _foundCustomer != null)
               Container(
-                margin: EdgeInsets.only(top: 8),
-                padding: EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                margin: EdgeInsets.only(top: isVerySmallScreen ? 4 : (isSmallScreen ? 6 : 8)),
+                padding: EdgeInsets.symmetric(
+                  horizontal: isVerySmallScreen ? 6 : (isSmallScreen ? 8 : 10), 
+                  vertical: isVerySmallScreen ? 4 : (isSmallScreen ? 6 : 8)
+                ),
                 decoration: BoxDecoration(
                   color: _foundCustomer!.remainingTime.inSeconds > 0
                       ? Colors.green.shade50
                       : Colors.orange.shade50,
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(isVerySmallScreen ? 4 : (isSmallScreen ? 6 : 8)),
                   border: Border.all(
                     color: _foundCustomer!.remainingTime.inSeconds > 0
                         ? Colors.green.shade100
@@ -1086,9 +1210,9 @@ class _NewCustomerFormState extends State<NewCustomerForm>
                           color: _foundCustomer!.remainingTime.inSeconds > 0
                               ? Colors.green.shade700
                               : Colors.orange.shade700,
-                          size: 16,
+                          size: isVerySmallScreen ? 12 : (isSmallScreen ? 14 : 16),
                         ),
-                        SizedBox(width: 6),
+                        SizedBox(width: isVerySmallScreen ? 3 : (isSmallScreen ? 4 : 6)),
                         Expanded(
                           child: Text(
                             _foundCustomer!.remainingTime.inSeconds > 0
@@ -1099,7 +1223,7 @@ class _NewCustomerFormState extends State<NewCustomerForm>
                               color: _foundCustomer!.remainingTime.inSeconds > 0
                                   ? Colors.green.shade700
                                   : Colors.orange.shade700,
-                              fontSize: 13,
+                              fontSize: isVerySmallScreen ? 10 : (isSmallScreen ? 12 : 13),
                             ),
                           ),
                         ),
@@ -1108,42 +1232,50 @@ class _NewCustomerFormState extends State<NewCustomerForm>
 
                     // Süre kullanımı seçenekleri - Sadece kalan süresi varsa göster
                     if (_foundCustomer!.remainingTime.inSeconds > 0) ...[
-                      SizedBox(height: 6),
+                      SizedBox(height: isVerySmallScreen ? 2 : (isSmallScreen ? 4 : 6)),
                       Row(
                         children: [
-                          _buildUsageOptionButton(
-                            label: 'Sadece Kalan Süre',
-                            icon: Icons.timelapse,
-                            isSelected:
-                                _isUsingRemainingTime && _selectedDuration == 0,
-                            onTap: () {
-                              setState(() {
-                                _isUsingRemainingTime = true;
-                                _selectedDuration = 0;
-                                _selectedDurationPrice = null; // Sadece kalan süre seçildiğinde fiyat null
-                              });
-                            },
+                          Expanded(
+                            child: _buildUsageOptionButton(
+                              label: 'Sadece Kalan Süre',
+                              icon: Icons.timelapse,
+                              isSelected:
+                                  _isUsingRemainingTime && _selectedDuration == 0,
+                              onTap: () {
+                                setState(() {
+                                  _isUsingRemainingTime = true;
+                                  _selectedDuration = 0;
+                                  _selectedDurationPrice = null; // Sadece kalan süre seçildiğinde fiyat null
+                                });
+                              },
+                            ),
                           ),
-                          SizedBox(width: 4),
-                          _buildUsageOptionButton(
-                            label: 'Kalan Süreye Ekle',
-                            icon: Icons.add_circle_outline,
-                            isSelected:
-                                _isUsingRemainingTime && _selectedDuration > 0,
-                            onTap: () {
-                              setState(() {
-                                _isUsingRemainingTime = true;
-                                // Eğer süre seçilmediyse varsayılan bir süre seç
-                                if (_selectedDuration == 0) {
-                                  _selectedDuration = 60;
-                                }
-                                // Seçilen süreye göre fiyatı güncelle
-                                _selectedDurationPrice = _availableDurations.firstWhere(
-                                  (dp) => dp.duration == _selectedDuration,
-                                  orElse: () => _availableDurations.first,
-                                );
-                              });
-                            },
+                          SizedBox(width: isVerySmallScreen ? 2 : (isSmallScreen ? 4 : 6)),
+                          Expanded(
+                            child: _buildUsageOptionButton(
+                              label: 'Kalan Süreye Ekle',
+                              icon: Icons.add_circle_outline,
+                              isSelected:
+                                  _isUsingRemainingTime && _selectedDuration > 0,
+                              onTap: () {
+                                setState(() {
+                                  _isUsingRemainingTime = true;
+                                  // Eğer süre seçilmediyse varsayılan bir süre seç
+                                  if (_selectedDuration == 0) {
+                                    _selectedDuration = 60;
+                                  }
+                                  // Seçilen süreye göre fiyatı güncelle
+                                  _selectedDurationPrice = _availableDurations.firstWhere(
+                                    (dp) => dp.duration == _selectedDuration,
+                                    orElse: () => _availableDurations.first,
+                                  );
+                                  // Süre değiştiğinde kardeş sayısını sıfırla (60 dakika değilse)
+                                  if (_selectedDuration != 60) {
+                                    _siblingCount = 0;
+                                  }
+                                });
+                              },
+                            ),
                           ),
                         ],
                       ),
@@ -1153,26 +1285,41 @@ class _NewCustomerFormState extends State<NewCustomerForm>
                     if (_foundCustomer!.remainingTime.inSeconds > 0 &&
                         _isUsingRemainingTime)
                       Padding(
-                        padding: EdgeInsets.only(top: 8),
+                        padding: EdgeInsets.only(top: isVerySmallScreen ? 2 : (isSmallScreen ? 4 : 6)),
                         child: Container(
                           width: double.infinity,
                           padding: EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 6,
+                            horizontal: isVerySmallScreen ? 6 : (isSmallScreen ? 8 : 10),
+                            vertical: isVerySmallScreen ? 4 : (isSmallScreen ? 6 : 8),
                           ),
                           decoration: BoxDecoration(
                             color: Colors.green.shade100,
-                            borderRadius: BorderRadius.circular(4),
+                            borderRadius: BorderRadius.circular(isVerySmallScreen ? 4 : (isSmallScreen ? 6 : 8)),
                           ),
-                          child: Text(
-                            _selectedDuration > 0
-                                ? 'Toplam süre: ${((_selectedDuration * 60 + _foundCustomer!.remainingTime.inSeconds) ~/ 60)}:${((_selectedDuration * 60 + _foundCustomer!.remainingTime.inSeconds) % 60).toString().padLeft(2, '0')}'
-                                : 'Sadece kalan süre kullanılacak: ${_foundCustomer!.remainingTime.inMinutes}:${(_foundCustomer!.remainingTime.inSeconds % 60).toString().padLeft(2, '0')}',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.green.shade800,
-                            ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                _selectedDuration > 0
+                                    ? 'Toplam süre: ${((_selectedDuration * 60 + _foundCustomer!.remainingTime.inSeconds) ~/ 60)}:${((_selectedDuration * 60 + _foundCustomer!.remainingTime.inSeconds) % 60).toString().padLeft(2, '0')}'
+                                    : 'Sadece kalan süre kullanılacak: ${_foundCustomer!.remainingTime.inMinutes}:${(_foundCustomer!.remainingTime.inSeconds % 60).toString().padLeft(2, '0')}',
+                                style: TextStyle(
+                                  fontSize: isVerySmallScreen ? 10 : (isSmallScreen ? 11 : 12),
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.green.shade800,
+                                ),
+                              ),
+                              // Çocuk başına düşen süre bilgisi
+                              if (_childCount > 1)
+                                Text(
+                                  'Çocuk başına: ${(_foundCustomer!.remainingTime.inSeconds ~/ _childCount) ~/ 60}:${((_foundCustomer!.remainingTime.inSeconds ~/ _childCount) % 60).toString().padLeft(2, '0')}',
+                                  style: TextStyle(
+                                    fontSize: isVerySmallScreen ? 9 : (isSmallScreen ? 10 : 11),
+                                    color: Colors.green.shade700,
+                                    fontStyle: FontStyle.italic,
+                                  ),
+                                ),
+                            ],
                           ),
                         ),
                       ),
@@ -1180,30 +1327,30 @@ class _NewCustomerFormState extends State<NewCustomerForm>
                     // Kalan süresi olmayan durumda uyarı mesajını daha belirgin yapalım
                     if (_foundCustomer!.remainingTime.inSeconds <= 0)
                       Padding(
-                        padding: EdgeInsets.only(top: 8),
+                        padding: EdgeInsets.only(top: isVerySmallScreen ? 2 : (isSmallScreen ? 4 : 6)),
                         child: Container(
                           width: double.infinity,
                           padding: EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 6,
+                            horizontal: isVerySmallScreen ? 6 : (isSmallScreen ? 8 : 10),
+                            vertical: isVerySmallScreen ? 4 : (isSmallScreen ? 6 : 8),
                           ),
                           decoration: BoxDecoration(
                             color: Colors.orange.shade100,
-                            borderRadius: BorderRadius.circular(4),
+                            borderRadius: BorderRadius.circular(isVerySmallScreen ? 4 : (isSmallScreen ? 6 : 8)),
                           ),
                           child: Row(
                             children: [
                               Icon(
                                 Icons.warning_amber_rounded,
-                                size: 14,
+                                size: isVerySmallScreen ? 12 : (isSmallScreen ? 14 : 16),
                                 color: Colors.orange.shade800,
                               ),
-                              SizedBox(width: 4),
+                              SizedBox(width: isVerySmallScreen ? 4 : (isSmallScreen ? 6 : 8)),
                               Expanded(
                                 child: Text(
                                   'Kalan süre bitmiş. Lütfen yeni süre ekleyin.',
                                   style: TextStyle(
-                                    fontSize: 12,
+                                    fontSize: isVerySmallScreen ? 10 : (isSmallScreen ? 11 : 12),
                                     fontWeight: FontWeight.bold,
                                     color: Colors.orange.shade800,
                                   ),
@@ -1223,14 +1370,18 @@ class _NewCustomerFormState extends State<NewCustomerForm>
   }
 
   Widget _buildDurationCard() {
+    final screenHeight = MediaQuery.of(context).size.height;
+    final isVerySmallScreen = screenHeight < 700;
+    final isSmallScreen = screenHeight < 800;
+    
     return Card(
       margin: EdgeInsets.zero,
       elevation: 0,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(isVerySmallScreen ? 4 : (isSmallScreen ? 6 : 8))),
       color: Colors.white,
       surfaceTintColor: Colors.white,
       child: Padding(
-        padding: const EdgeInsets.all(14),
+        padding: EdgeInsets.all(isVerySmallScreen ? 4 : (isSmallScreen ? 6 : 8)),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -1239,29 +1390,35 @@ class _NewCustomerFormState extends State<NewCustomerForm>
               children: [
                 // Başlık kısmı
                 Container(
-                  padding: const EdgeInsets.all(8),
+                  padding: EdgeInsets.all(isSmallScreen ? 6 : 8),
                   decoration: BoxDecoration(
                     color: AppTheme.primaryColor.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: BorderRadius.circular(isSmallScreen ? 8 : 10),
                   ),
-                  child: const Icon(
+                  child: Icon(
                     Icons.timer_rounded,
                     color: AppTheme.primaryColor,
-                    size: 20,
+                    size: isSmallScreen ? 16 : 20,
                   ),
                 ),
-                const SizedBox(width: 10),
-                const Text(
+                SizedBox(width: isSmallScreen ? 8 : 10),
+                Text(
                   'Oyun Süresi',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  style: TextStyle(
+                    fontSize: isSmallScreen ? 16 : 18, 
+                    fontWeight: FontWeight.bold
+                  ),
                 ),
 
                 const Spacer(),
 
                 // İndirim Dropdown - Modern ve Responsive
                 Container(
-                  height: 36,
-                  constraints: const BoxConstraints(minWidth: 100, maxWidth: 120),
+                  height: isSmallScreen ? 32 : 36,
+                  constraints: BoxConstraints(
+                    minWidth: isSmallScreen ? 80 : 100, 
+                    maxWidth: isSmallScreen ? 100 : 120
+                  ),
                   decoration: BoxDecoration(
                     gradient: _selectedDiscountType != null
                         ? LinearGradient(
@@ -1274,7 +1431,7 @@ class _NewCustomerFormState extends State<NewCustomerForm>
                           )
                         : null,
                     color: _selectedDiscountType == null ? Colors.grey.shade50 : null,
-                    borderRadius: BorderRadius.circular(18),
+                    borderRadius: BorderRadius.circular(isSmallScreen ? 14 : 18),
                     border: Border.all(
                       color: _selectedDiscountType != null
                           ? AppTheme.primaryColor.withOpacity(0.3)
@@ -1294,13 +1451,16 @@ class _NewCustomerFormState extends State<NewCustomerForm>
                   child: Material(
                     color: Colors.transparent,
                     child: InkWell(
-                      borderRadius: BorderRadius.circular(18),
+                      borderRadius: BorderRadius.circular(isSmallScreen ? 14 : 18),
                       onTap: () {
                         // Dropdown açma işlemi için setState
                         setState(() {});
                       },
                       child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        padding: EdgeInsets.symmetric(
+                          horizontal: isSmallScreen ? 8 : 12, 
+                          vertical: isSmallScreen ? 6 : 8
+                        ),
                         child: DropdownButtonHideUnderline(
                           child: DropdownButton<String>(
                             value: _selectedDiscountType,
@@ -1309,14 +1469,14 @@ class _NewCustomerFormState extends State<NewCustomerForm>
                               children: [
                                 Icon(
                                   Icons.local_offer_outlined,
-                                  size: 14,
+                                  size: isSmallScreen ? 12 : 14,
                                   color: Colors.grey.shade600,
                                 ),
-                                const SizedBox(width: 4),
+                                SizedBox(width: isSmallScreen ? 3 : 4),
                                 Text(
                                   'İndirim',
                                   style: TextStyle(
-                                    fontSize: 11,
+                                    fontSize: isSmallScreen ? 10 : 11,
                                     color: Colors.grey.shade600,
                                     fontWeight: FontWeight.w500,
                                   ),
@@ -1425,10 +1585,10 @@ class _NewCustomerFormState extends State<NewCustomerForm>
                               color: _selectedDiscountType != null
                                   ? AppTheme.primaryColor
                                   : Colors.grey.shade500,
-                              size: 16,
+                              size: isSmallScreen ? 14 : 16,
                             ),
                             style: TextStyle(
-                              fontSize: 11,
+                              fontSize: isSmallScreen ? 10 : 11,
                               color: AppTheme.primaryColor,
                               fontWeight: FontWeight.w600,
                             ),
@@ -1539,17 +1699,17 @@ class _NewCustomerFormState extends State<NewCustomerForm>
                   ),
                 ),
 
-                const SizedBox(width: 8),
+                SizedBox(width: isSmallScreen ? 6 : 8),
 
                 // Süre gösterimi (sağ tarafta)
                 Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 8,
+                  padding: EdgeInsets.symmetric(
+                    horizontal: isSmallScreen ? 10 : 14,
+                    vertical: isSmallScreen ? 6 : 8,
                   ),
                   decoration: BoxDecoration(
                     color: AppTheme.primaryColor,
-                    borderRadius: BorderRadius.circular(14),
+                    borderRadius: BorderRadius.circular(isSmallScreen ? 10 : 14),
                     boxShadow: [
                       BoxShadow(
                         color: AppTheme.primaryColor.withOpacity(0.2),
@@ -1563,17 +1723,17 @@ class _NewCustomerFormState extends State<NewCustomerForm>
                     children: [
                       Text(
                         '$_selectedDuration',
-                        style: const TextStyle(
-                          fontSize: 20,
+                        style: TextStyle(
+                          fontSize: isSmallScreen ? 16 : 20,
                           fontWeight: FontWeight.bold,
                           color: Colors.white,
                         ),
                       ),
-                      const SizedBox(width: 4),
-                      const Text(
+                      SizedBox(width: isSmallScreen ? 3 : 4),
+                      Text(
                         'dk',
                         style: TextStyle(
-                          fontSize: 14,
+                          fontSize: isSmallScreen ? 12 : 14,
                           fontWeight: FontWeight.w400,
                           color: Colors.white,
                         ),
@@ -1584,25 +1744,13 @@ class _NewCustomerFormState extends State<NewCustomerForm>
               ],
             ),
 
-            const SizedBox(height: 14),
+            SizedBox(height: isVerySmallScreen ? 4 : (isSmallScreen ? 6 : 8)),
 
             // İşletme Ayarlarından Gelen Süre Seçenekleri
             if (_availableDurations.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Text(
-                _selectedDiscountType == 'Özel Çocuk' 
-                    ? 'Özel Çocuk - 1 Saat Ücretsiz'
-                    : 'Mevcut Süre Seçenekleri',
-                style: TextStyle(
-                  fontSize: 13,
-                  color: Colors.grey.shade600,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              const SizedBox(height: 8),
               Wrap(
-                spacing: 6,
-                runSpacing: 6,
+                spacing: isVerySmallScreen ? 3 : (isSmallScreen ? 4 : 6),
+                runSpacing: isVerySmallScreen ? 3 : (isSmallScreen ? 4 : 6),
                 children: _getFilteredDurations().map((durationPrice) {
                   final isSelected = _selectedDurationPrice?.duration == durationPrice.duration;
                   final discountRate = _discountRates[_selectedDiscountType] ?? 0.0;
@@ -1613,16 +1761,20 @@ class _NewCustomerFormState extends State<NewCustomerForm>
                       setState(() {
                         _selectedDurationPrice = durationPrice;
                         _selectedDuration = durationPrice.duration;
+                        // Süre değiştiğinde kardeş sayısını sıfırla (60 dakika değilse)
+                        if (durationPrice.duration != 60) {
+                          _siblingCount = 0;
+                        }
                       });
                     },
                     child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 8,
+                      padding: EdgeInsets.symmetric(
+                        horizontal: isVerySmallScreen ? 4 : (isSmallScreen ? 6 : 8),
+                        vertical: isVerySmallScreen ? 3 : (isSmallScreen ? 4 : 6),
                       ),
                       decoration: BoxDecoration(
                         color: isSelected ? AppTheme.primaryColor : Colors.white,
-                        borderRadius: BorderRadius.circular(10),
+                        borderRadius: BorderRadius.circular(isVerySmallScreen ? 4 : (isSmallScreen ? 6 : 8)),
                         border: Border.all(
                           color: isSelected
                               ? AppTheme.primaryColor
@@ -1635,18 +1787,19 @@ class _NewCustomerFormState extends State<NewCustomerForm>
                                   color: AppTheme.primaryColor.withOpacity(
                                     0.15,
                                   ),
-                                  blurRadius: 3,
+                                  blurRadius: 2,
                                   offset: const Offset(0, 1),
                                 ),
                               ]
                             : null,
                       ),
                       child: Column(
+                        mainAxisSize: MainAxisSize.min,
                         children: [
                           Text(
                             '${durationPrice.duration} dk',
                             style: TextStyle(
-                              fontSize: 13,
+                              fontSize: isVerySmallScreen ? 9 : (isSmallScreen ? 10 : 11),
                               fontWeight: FontWeight.w600,
                               color: isSelected ? Colors.white : AppTheme.primaryColor,
                             ),
@@ -1656,7 +1809,7 @@ class _NewCustomerFormState extends State<NewCustomerForm>
                                 ? 'Ücretsiz'
                                 : '${discountedPrice.toStringAsFixed(2)} ₺',
                             style: TextStyle(
-                              fontSize: 11,
+                              fontSize: isVerySmallScreen ? 7 : (isSmallScreen ? 8 : 9),
                               fontWeight: FontWeight.w500,
                               color: isSelected 
                                   ? Colors.white.withOpacity(0.8) 
@@ -1668,7 +1821,7 @@ class _NewCustomerFormState extends State<NewCustomerForm>
                             Text(
                               'İndirim: %${(discountRate * 100).toInt()}',
                               style: TextStyle(
-                                fontSize: 9,
+                                fontSize: isVerySmallScreen ? 5 : (isSmallScreen ? 6 : 7),
                                 fontWeight: FontWeight.w500,
                                 color: isSelected 
                                     ? Colors.white.withOpacity(0.7) 
@@ -1685,10 +1838,13 @@ class _NewCustomerFormState extends State<NewCustomerForm>
               // Eğer işletme ayarları yüklenmediyse bilgi mesajı
               Container(
                 width: double.infinity,
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                padding: EdgeInsets.symmetric(
+                  horizontal: isSmallScreen ? 12 : 16, 
+                  vertical: isSmallScreen ? 8 : 12
+                ),
                 decoration: BoxDecoration(
                   color: Colors.orange.shade50,
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(isSmallScreen ? 8 : 12),
                   border: Border.all(color: Colors.orange.shade200),
                 ),
                 child: Row(
@@ -1696,15 +1852,15 @@ class _NewCustomerFormState extends State<NewCustomerForm>
                     Icon(
                       Icons.warning_amber_rounded,
                       color: Colors.orange.shade700,
-                      size: 20,
+                      size: isSmallScreen ? 16 : 20,
                     ),
-                    const SizedBox(width: 12),
+                    SizedBox(width: isSmallScreen ? 8 : 12),
                     Expanded(
                       child: Text(
                         'Henüz süre seçenekleri belirlenmemiş. Lütfen admin ile iletişime geçin.',
                         style: TextStyle(
                           color: Colors.orange.shade700,
-                          fontSize: 13,
+                          fontSize: isSmallScreen ? 11 : 13,
                           fontWeight: FontWeight.w500,
                         ),
                       ),
@@ -1721,36 +1877,167 @@ class _NewCustomerFormState extends State<NewCustomerForm>
 
 
 
-  Widget _buildPaymentInfoCard() {
-    // İndirim hesaplama
-    final discountRate = _discountRates[_selectedDiscountType] ?? 0.0;
-    final originalPrice = _selectedDurationPrice?.price ?? 0.0;
-    final discountedPrice = originalPrice * (1 - discountRate);
-    final isFree = discountedPrice == 0.0;
+  // Ödeme Yöntemi Seçim Kartı
+  Widget _buildPaymentMethodCard() {
+    final screenHeight = MediaQuery.of(context).size.height;
+    final isVerySmallScreen = screenHeight < 700;
+    final isSmallScreen = screenHeight < 800;
     
     return Card(
       margin: EdgeInsets.zero,
       elevation: 0,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(isVerySmallScreen ? 4 : (isSmallScreen ? 6 : 8))),
+      color: Colors.white,
+      surfaceTintColor: Colors.white,
+      child: Padding(
+        padding: EdgeInsets.all(isVerySmallScreen ? 4 : (isSmallScreen ? 6 : 8)),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Başlık
+            Row(
+              children: [
+                Container(
+                  padding: EdgeInsets.all(isVerySmallScreen ? 4 : (isSmallScreen ? 6 : 8)),
+                  decoration: BoxDecoration(
+                    color: AppTheme.primaryColor.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(isVerySmallScreen ? 4 : (isSmallScreen ? 6 : 8)),
+                  ),
+                  child: Icon(
+                    Icons.payment_rounded,
+                    color: AppTheme.primaryColor,
+                    size: isVerySmallScreen ? 14 : (isSmallScreen ? 16 : 18),
+                  ),
+                ),
+                SizedBox(width: isVerySmallScreen ? 6 : (isSmallScreen ? 8 : 10)),
+                Text(
+                  'Ödeme Yöntemi',
+                  style: TextStyle(
+                    fontSize: isVerySmallScreen ? 12 : (isSmallScreen ? 14 : 16), 
+                    fontWeight: FontWeight.bold
+                  ),
+                ),
+              ],
+            ),
+            SizedBox(height: isVerySmallScreen ? 4 : (isSmallScreen ? 6 : 8)),
+            
+            // Ödeme seçenekleri
+            Row(
+              children: [
+                Expanded(
+                  child: _buildPaymentMethodButton(
+                    label: 'Nakit',
+                    icon: Icons.money,
+                    isSelected: _selectedPaymentMethod == 'Nakit',
+                    onTap: () {
+                      setState(() {
+                        _selectedPaymentMethod = 'Nakit';
+                      });
+                    },
+                  ),
+                ),
+                SizedBox(width: isVerySmallScreen ? 4 : (isSmallScreen ? 6 : 8)),
+                Expanded(
+                  child: _buildPaymentMethodButton(
+                    label: 'Kart',
+                    icon: Icons.credit_card,
+                    isSelected: _selectedPaymentMethod == 'Kart',
+                    onTap: () {
+                      setState(() {
+                        _selectedPaymentMethod = 'Kart';
+                      });
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Ödeme yöntemi butonu
+  Widget _buildPaymentMethodButton({
+    required String label,
+    required IconData icon,
+    required bool isSelected,
+    required VoidCallback onTap,
+  }) {
+    final screenHeight = MediaQuery.of(context).size.height;
+    final isVerySmallScreen = screenHeight < 700;
+    final isSmallScreen = screenHeight < 800;
+    
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        height: isVerySmallScreen ? 24 : (isSmallScreen ? 28 : 32),
+        decoration: BoxDecoration(
+          color: isSelected ? AppTheme.primaryColor : Colors.grey.shade50,
+          borderRadius: BorderRadius.circular(isVerySmallScreen ? 4 : (isSmallScreen ? 6 : 8)),
+          border: Border.all(
+            color: isSelected ? AppTheme.primaryColor : Colors.grey.shade300,
+            width: 1,
+          ),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              icon,
+              color: isSelected ? Colors.white : AppTheme.primaryColor,
+              size: isVerySmallScreen ? 10 : (isSmallScreen ? 12 : 14),
+            ),
+            SizedBox(width: isVerySmallScreen ? 2 : (isSmallScreen ? 4 : 6)),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: isVerySmallScreen ? 8 : (isSmallScreen ? 9 : 10),
+                fontWeight: FontWeight.w600,
+                color: isSelected ? Colors.white : AppTheme.primaryColor,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPaymentInfoCard() {
+    final screenHeight = MediaQuery.of(context).size.height;
+    final isVerySmallScreen = screenHeight < 700;
+    final isSmallScreen = screenHeight < 800;
+    
+    // Final fiyat hesaplama (çocuk sayısı ve kardeş indirimi dahil)
+    final finalPrice = _calculateFinalPrice();
+    final isFree = finalPrice == 0.0;
+    
+    // İndirim hesaplama
+    final discountRate = _discountRates[_selectedDiscountType] ?? 0.0;
+    
+    return Card(
+      margin: EdgeInsets.zero,
+      elevation: 0,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(isVerySmallScreen ? 4 : (isSmallScreen ? 6 : 8))),
       color: isFree ? Colors.blue.shade50 : Colors.green.shade50,
       surfaceTintColor: isFree ? Colors.blue.shade50 : Colors.green.shade50,
       child: Padding(
-        padding: const EdgeInsets.all(12),
+        padding: EdgeInsets.all(isVerySmallScreen ? 4 : (isSmallScreen ? 6 : 8)),
         child: Row(
           children: [
             Container(
-              padding: const EdgeInsets.all(12),
+              padding: EdgeInsets.all(isVerySmallScreen ? 6 : (isSmallScreen ? 8 : 10)),
               decoration: BoxDecoration(
                 color: isFree ? Colors.blue.shade100 : Colors.green.shade100,
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(isVerySmallScreen ? 6 : (isSmallScreen ? 8 : 10)),
               ),
               child: Icon(
                 isFree ? Icons.card_giftcard_rounded : Icons.payment_rounded,
                 color: isFree ? Colors.blue.shade700 : Colors.green.shade700,
-                size: 24,
+                size: isVerySmallScreen ? 16 : (isSmallScreen ? 18 : 20),
               ),
             ),
-            const SizedBox(width: 16),
+            SizedBox(width: isVerySmallScreen ? 8 : (isSmallScreen ? 10 : 12)),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1758,20 +2045,20 @@ class _NewCustomerFormState extends State<NewCustomerForm>
                   Text(
                     isFree ? 'Ücretsiz' : 'Ödenecek Tutar',
                     style: TextStyle(
-                      fontSize: 14,
+                      fontSize: isVerySmallScreen ? 10 : (isSmallScreen ? 11 : 12),
                       color: isFree ? Colors.blue.shade700 : Colors.green.shade700,
                       fontWeight: FontWeight.w500,
                     ),
                   ),
-                  const SizedBox(height: 4),
+                  SizedBox(height: isVerySmallScreen ? 2 : (isSmallScreen ? 3 : 4)),
                   Text(
                     _isUsingRemainingTime && _selectedDuration == 0 
                         ? '0.00 ₺' 
                         : isFree 
                             ? 'Ücretsiz'
-                            : '${discountedPrice.toStringAsFixed(2)} ₺',
+                            : '${finalPrice.toStringAsFixed(2)} ₺',
                     style: TextStyle(
-                      fontSize: 24,
+                      fontSize: isVerySmallScreen ? 14 : (isSmallScreen ? 16 : 18),
                       fontWeight: FontWeight.bold,
                       color: isFree ? Colors.blue.shade800 : Colors.green.shade800,
                     ),
@@ -1781,37 +2068,31 @@ class _NewCustomerFormState extends State<NewCustomerForm>
                         ? 'Kalan süre kullanılacak' 
                         : '${_selectedDurationPrice?.duration ?? 0} dakika için',
                     style: TextStyle(
-                      fontSize: 12,
+                      fontSize: isVerySmallScreen ? 8 : (isSmallScreen ? 9 : 10),
                       color: isFree ? Colors.blue.shade600 : Colors.green.shade600,
                     ),
                   ),
+                  // Çocuk sayısı ve kardeş bilgisi
+                  if (_childCount > 1 || _siblingCount > 0)
+                    Text(
+                      '${_childCount} çocuk${_siblingCount > 0 ? ' (${_siblingCount} kardeş)' : ''}',
+                      style: TextStyle(
+                        fontSize: isVerySmallScreen ? 7 : (isSmallScreen ? 8 : 9),
+                        color: isFree ? Colors.blue.shade600 : Colors.green.shade600,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
                   // İndirim bilgisi
                   if (discountRate > 0 && !isFree)
                     Text(
                       'İndirim: %${(discountRate * 100).toInt()} (${_selectedDiscountType})',
                       style: TextStyle(
-                        fontSize: 11,
+                        fontSize: isVerySmallScreen ? 7 : (isSmallScreen ? 8 : 9),
                         color: Colors.orange.shade600,
                         fontWeight: FontWeight.w500,
                       ),
                     ),
                 ],
-              ),
-            ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: isFree ? Colors.blue.shade100 : Colors.green.shade100,
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: isFree ? Colors.blue.shade300 : Colors.green.shade300),
-              ),
-              child: Text(
-                isFree ? 'Hediye' : 'Ödeme',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: isFree ? Colors.blue.shade700 : Colors.green.shade700,
-                ),
               ),
             ),
           ],
@@ -1821,25 +2102,32 @@ class _NewCustomerFormState extends State<NewCustomerForm>
   }
 
   Widget _buildSaveButton() {
+    final screenHeight = MediaQuery.of(context).size.height;
+    final isVerySmallScreen = screenHeight < 700;
+    final isSmallScreen = screenHeight < 800;
+    
     return SizedBox(
       width: double.infinity,
-      height: 56,
+      height: isVerySmallScreen ? 40 : (isSmallScreen ? 44 : 48),
       child: ElevatedButton.icon(
         onPressed: _isLoading ? null : _save,
         icon: _isLoading
             ? Container(
-                width: 20,
-                height: 20,
-                padding: const EdgeInsets.all(2),
+                width: isVerySmallScreen ? 16 : (isSmallScreen ? 18 : 20),
+                height: isVerySmallScreen ? 16 : (isSmallScreen ? 18 : 20),
+                padding: EdgeInsets.all(isVerySmallScreen ? 1 : (isSmallScreen ? 1.5 : 2)),
                 child: const CircularProgressIndicator(
                   color: Colors.white,
                   strokeWidth: 2,
                 ),
               )
-            : const Icon(Icons.check_rounded, size: 22),
+            : Icon(Icons.check_rounded, size: isVerySmallScreen ? 16 : (isSmallScreen ? 18 : 20)),
         label: Text(
           _isLoading ? 'Kaydediliyor...' : 'Kaydı Tamamla',
-          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          style: TextStyle(
+            fontSize: isVerySmallScreen ? 12 : (isSmallScreen ? 14 : 16), 
+            fontWeight: FontWeight.bold
+          ),
         ),
         style: ElevatedButton.styleFrom(
           backgroundColor: AppTheme.primaryColor,
@@ -1847,7 +2135,7 @@ class _NewCustomerFormState extends State<NewCustomerForm>
           elevation: 4,
           shadowColor: AppTheme.primaryColor.withOpacity(0.4),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(isVerySmallScreen ? 8 : (isSmallScreen ? 10 : 12)),
           ),
         ),
       ),
@@ -1864,36 +2152,44 @@ class _NewCustomerFormState extends State<NewCustomerForm>
     String? hint,
     Function(String)? onChanged,
   }) {
+    final screenHeight = MediaQuery.of(context).size.height;
+    final isVerySmallScreen = screenHeight < 700;
+    final isSmallScreen = screenHeight < 800;
+    
     return TextFormField(
       controller: controller,
       decoration: InputDecoration(
         labelText: label,
         hintText: hint,
-        prefixIcon: Icon(icon, color: AppTheme.primaryColor),
+        prefixIcon: Icon(
+          icon, 
+          color: AppTheme.primaryColor,
+          size: isVerySmallScreen ? 16 : (isSmallScreen ? 18 : 20),
+        ),
         filled: true,
         fillColor: Colors.grey.shade50,
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(isVerySmallScreen ? 8 : (isSmallScreen ? 10 : 12)),
           borderSide: BorderSide(color: Colors.grey.shade300),
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(isVerySmallScreen ? 8 : (isSmallScreen ? 10 : 12)),
           borderSide: BorderSide(color: Colors.grey.shade300),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(isVerySmallScreen ? 8 : (isSmallScreen ? 10 : 12)),
           borderSide: const BorderSide(color: AppTheme.primaryColor, width: 2),
         ),
         errorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(isVerySmallScreen ? 8 : (isSmallScreen ? 10 : 12)),
           borderSide: BorderSide(color: Colors.red.shade400),
         ),
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 20,
-          vertical: 16,
+        contentPadding: EdgeInsets.symmetric(
+          horizontal: isVerySmallScreen ? 12 : (isSmallScreen ? 14 : 16),
+          vertical: isVerySmallScreen ? 8 : (isSmallScreen ? 10 : 12),
         ),
       ),
-      style: const TextStyle(fontSize: 16),
+      style: TextStyle(fontSize: isVerySmallScreen ? 12 : (isSmallScreen ? 14 : 16)),
       validator: validator,
       keyboardType: keyboardType,
       inputFormatters: inputFormatters,
@@ -1908,13 +2204,20 @@ class _NewCustomerFormState extends State<NewCustomerForm>
     required bool isSelected,
     required VoidCallback onTap,
   }) {
+    final screenHeight = MediaQuery.of(context).size.height;
+    final isVerySmallScreen = screenHeight < 600;
+    final isSmallScreen = screenHeight < 700;
+    
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        padding: EdgeInsets.symmetric(
+          horizontal: isVerySmallScreen ? 2 : (isSmallScreen ? 3 : 12), 
+          vertical: isVerySmallScreen ? 2 : (isSmallScreen ? 3 : 8)
+        ),
         decoration: BoxDecoration(
           color: isSelected ? AppTheme.primaryColor : Colors.white,
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(isVerySmallScreen ? 4 : (isSmallScreen ? 6 : 8)),
           border: Border.all(
             color: isSelected ? AppTheme.primaryColor : Colors.grey.shade300,
             width: 1,
@@ -1926,12 +2229,13 @@ class _NewCustomerFormState extends State<NewCustomerForm>
             Icon(
               icon,
               color: isSelected ? Colors.white : AppTheme.primaryColor,
+              size: isVerySmallScreen ? 14 : (isSmallScreen ? 16 : 18),
             ),
-            const SizedBox(width: 4),
+            SizedBox(width: isVerySmallScreen ? 2 : (isSmallScreen ? 3 : 4)),
             Text(
               label,
               style: TextStyle(
-                fontSize: 13,
+                fontSize: isVerySmallScreen ? 9 : (isSmallScreen ? 11 : 13),
                 fontWeight: FontWeight.w600,
                 color: isSelected ? Colors.white : AppTheme.primaryColor,
               ),
@@ -2059,7 +2363,7 @@ class _NewCustomerFormState extends State<NewCustomerForm>
         items: [_selectedDiscountType != null 
             ? 'Giriş Ücreti - ${customer.totalSeconds ~/ 60} dakika (${_selectedDiscountType})'
             : 'Giriş Ücreti - ${customer.totalSeconds ~/ 60} dakika'],
-        paymentMethod: 'Nakit',
+        paymentMethod: customer.paymentMethod, // Müşteriden gelen ödeme yöntemi
         status: 'Tamamlandı',
         createdAt: DateTime.now(),
         updatedAt: DateTime.now(),
@@ -2081,6 +2385,186 @@ class _NewCustomerFormState extends State<NewCustomerForm>
     } catch (e) {
       print('Giriş ücreti satış kaydı oluşturulurken hata: $e');
     }
+  }
+
+  // Çocuk sayısı alanı
+  Widget _buildChildCountField() {
+    final screenHeight = MediaQuery.of(context).size.height;
+    final isVerySmallScreen = screenHeight < 700;
+    final isSmallScreen = screenHeight < 800;
+    
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          'Çocuk Sayısı',
+          style: TextStyle(
+            fontSize: isVerySmallScreen ? 8 : (isSmallScreen ? 9 : 10),
+            fontWeight: FontWeight.w600,
+            color: Colors.grey.shade700,
+          ),
+        ),
+        SizedBox(height: 2),
+        Container(
+          height: isVerySmallScreen ? 24 : (isSmallScreen ? 28 : 32),
+          decoration: BoxDecoration(
+            color: Colors.grey.shade50,
+            borderRadius: BorderRadius.circular(isVerySmallScreen ? 4 : (isSmallScreen ? 6 : 8)),
+            border: Border.all(color: Colors.grey.shade200),
+          ),
+          child: Row(
+            children: [
+              GestureDetector(
+                onTap: _childCount > 1 ? () {
+                  setState(() {
+                    _childCount--;
+                    if (_siblingCount >= _childCount) {
+                      _siblingCount = _childCount - 1;
+                    }
+                  });
+                } : null,
+                child: Container(
+                  width: isVerySmallScreen ? 20 : (isSmallScreen ? 24 : 28),
+                  height: isVerySmallScreen ? 20 : (isSmallScreen ? 24 : 28),
+                  decoration: BoxDecoration(
+                    color: _childCount > 1 ? AppTheme.primaryColor.withOpacity(0.1) : Colors.grey.shade100,
+                    borderRadius: BorderRadius.circular(isVerySmallScreen ? 3 : (isSmallScreen ? 4 : 6)),
+                  ),
+                  child: Icon(
+                    Icons.remove,
+                    color: _childCount > 1 ? AppTheme.primaryColor : Colors.grey.shade400,
+                    size: isVerySmallScreen ? 10 : (isSmallScreen ? 12 : 14),
+                  ),
+                ),
+              ),
+              Expanded(
+                child: Text(
+                  _childCount.toString(),
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: isVerySmallScreen ? 12 : (isSmallScreen ? 14 : 16),
+                    fontWeight: FontWeight.bold,
+                    color: AppTheme.primaryColor,
+                  ),
+                ),
+              ),
+              GestureDetector(
+                onTap: _childCount < 10 ? () {
+                  setState(() {
+                    _childCount++;
+                  });
+                } : null,
+                child: Container(
+                  width: isVerySmallScreen ? 20 : (isSmallScreen ? 24 : 28),
+                  height: isVerySmallScreen ? 20 : (isSmallScreen ? 24 : 28),
+                  decoration: BoxDecoration(
+                    color: _childCount < 10 ? AppTheme.primaryColor.withOpacity(0.1) : Colors.grey.shade100,
+                    borderRadius: BorderRadius.circular(isVerySmallScreen ? 3 : (isSmallScreen ? 4 : 6)),
+                  ),
+                  child: Icon(
+                    Icons.add,
+                    color: _childCount < 10 ? AppTheme.primaryColor : Colors.grey.shade400,
+                    size: isVerySmallScreen ? 10 : (isSmallScreen ? 12 : 14),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  // Kardeş girişi alanı
+  Widget _buildSiblingCountField() {
+    final screenHeight = MediaQuery.of(context).size.height;
+    final isVerySmallScreen = screenHeight < 700;
+    final isSmallScreen = screenHeight < 800;
+    
+    // Kardeş indirimi sadece 60 dakika girişinde geçerli
+    bool isHourlyEntry = _selectedDuration == 60;
+    
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          isHourlyEntry ? 'Kardeş Girişi' : 'Kardeş Girişi (60dk)',
+          style: TextStyle(
+            fontSize: isVerySmallScreen ? 8 : (isSmallScreen ? 9 : 10),
+            fontWeight: FontWeight.w600,
+            color: isHourlyEntry ? Colors.grey.shade700 : Colors.grey.shade400,
+          ),
+        ),
+        SizedBox(height: 2),
+        Container(
+          height: isVerySmallScreen ? 24 : (isSmallScreen ? 28 : 32),
+          decoration: BoxDecoration(
+            color: isHourlyEntry ? Colors.grey.shade50 : Colors.grey.shade100,
+            borderRadius: BorderRadius.circular(isVerySmallScreen ? 4 : (isSmallScreen ? 6 : 8)),
+            border: Border.all(
+              color: isHourlyEntry ? Colors.grey.shade200 : Colors.grey.shade300,
+            ),
+          ),
+          child: Row(
+            children: [
+              GestureDetector(
+                onTap: isHourlyEntry && _siblingCount > 0 ? () {
+                  setState(() {
+                    _siblingCount--;
+                  });
+                } : null,
+                child: Container(
+                  width: isVerySmallScreen ? 20 : (isSmallScreen ? 24 : 28),
+                  height: isVerySmallScreen ? 20 : (isSmallScreen ? 24 : 28),
+                  decoration: BoxDecoration(
+                    color: isHourlyEntry && _siblingCount > 0 ? AppTheme.primaryColor.withOpacity(0.1) : Colors.grey.shade100,
+                    borderRadius: BorderRadius.circular(isVerySmallScreen ? 3 : (isSmallScreen ? 4 : 6)),
+                  ),
+                  child: Icon(
+                    Icons.remove,
+                    color: isHourlyEntry && _siblingCount > 0 ? AppTheme.primaryColor : Colors.grey.shade400,
+                    size: isVerySmallScreen ? 10 : (isSmallScreen ? 12 : 14),
+                  ),
+                ),
+              ),
+              Expanded(
+                child: Text(
+                  _siblingCount.toString(),
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: isVerySmallScreen ? 12 : (isSmallScreen ? 14 : 16),
+                    fontWeight: FontWeight.bold,
+                    color: isHourlyEntry ? AppTheme.primaryColor : Colors.grey.shade400,
+                  ),
+                ),
+              ),
+              GestureDetector(
+                onTap: isHourlyEntry && _siblingCount < _childCount - 1 ? () {
+                  setState(() {
+                    _siblingCount++;
+                  });
+                } : null,
+                child: Container(
+                  width: isVerySmallScreen ? 20 : (isSmallScreen ? 24 : 28),
+                  height: isVerySmallScreen ? 20 : (isSmallScreen ? 24 : 28),
+                  decoration: BoxDecoration(
+                    color: isHourlyEntry && _siblingCount < _childCount - 1 ? AppTheme.primaryColor.withOpacity(0.1) : Colors.grey.shade100,
+                    borderRadius: BorderRadius.circular(isVerySmallScreen ? 3 : (isSmallScreen ? 4 : 6)),
+                  ),
+                  child: Icon(
+                    Icons.add,
+                    color: isHourlyEntry && _siblingCount < _childCount - 1 ? AppTheme.primaryColor : Colors.grey.shade400,
+                    size: isVerySmallScreen ? 10 : (isSmallScreen ? 12 : 14),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
   }
 }
 

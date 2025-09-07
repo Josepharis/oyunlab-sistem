@@ -1083,14 +1083,23 @@ class FirebaseService {
         throw Exception('Görsel yüklemek için kimlik doğrulaması gerekiyor');
       }
 
+      print('FIREBASE_SERVICE: Görev görseli yükleniyor - Task ID: $taskId');
+      print('FIREBASE_SERVICE: Kullanıcı: ${_auth.currentUser?.uid}');
+      print('FIREBASE_SERVICE: Dosya boyutu: ${await imageFile.length()} bytes');
+
       // Benzersiz dosya adı oluştur
       final timestamp = DateTime.now().millisecondsSinceEpoch;
       final fileName = 'task_${taskId}_${timestamp}.jpg';
       final ref = _storage.ref().child('task_images/$fileName');
 
+      print('FIREBASE_SERVICE: Storage referansı oluşturuldu: task_images/$fileName');
+
       // Görseli yükle
       final uploadTask = ref.putFile(imageFile);
+      print('FIREBASE_SERVICE: Upload task başlatıldı');
+      
       final snapshot = await uploadTask;
+      print('FIREBASE_SERVICE: Upload tamamlandı, snapshot alındı');
       
       // Download URL'ini al
       final downloadUrl = await snapshot.ref.getDownloadURL();
@@ -1099,6 +1108,11 @@ class FirebaseService {
       return downloadUrl;
     } catch (e) {
       print('FIREBASE_SERVICE: Görev görseli yüklenirken hata: $e');
+      print('FIREBASE_SERVICE: Hata türü: ${e.runtimeType}');
+      if (e is FirebaseException) {
+        print('FIREBASE_SERVICE: Firebase hata kodu: ${e.code}');
+        print('FIREBASE_SERVICE: Firebase hata mesajı: ${e.message}');
+      }
       rethrow;
     }
   }

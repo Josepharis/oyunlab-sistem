@@ -3492,9 +3492,24 @@ class _ProductSelectionSheetState extends State<ProductSelectionSheet>
                     width: double.infinity,
                     color: Colors.grey.shade50,
                     child: product.imageUrl != null
-                        ? Image.file(
-                            File(product.imageUrl!),
+                        ? Image.network(
+                            product.imageUrl!,
                             fit: BoxFit.cover,
+                            loadingBuilder: (context, child, loadingProgress) {
+                              if (loadingProgress == null) return child;
+                              return Container(
+                                height: 90,
+                                width: double.infinity,
+                                color: Colors.grey.shade100,
+                                child: Center(
+                                  child: CircularProgressIndicator(
+                                    value: loadingProgress.expectedTotalBytes != null
+                                        ? loadingProgress.cumulativeBytesLoaded / loadingProgress.expectedTotalBytes!
+                                        : null,
+                                  ),
+                                ),
+                              );
+                            },
                             errorBuilder: (context, error, stackTrace) {
                               return _buildPlaceholderImage(product.category);
                             },

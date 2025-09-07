@@ -12,6 +12,24 @@ service firebase.storage {
          firestore.get(/databases/(default)/documents/admin_users/$(request.auth.uid)).data.role in ['admin', 'manager']);
     }
     
+    // Görev görselleri için kurallar
+    match /task_images/{allPaths=**} {
+      // Herkes okuyabilir
+      allow read: if true;
+      
+      // Kimlik doğrulaması yapmış herkes yazabilir
+      allow write: if request.auth != null;
+    }
+    
+    // Ürün görselleri için kurallar
+    match /products/{allPaths=**} {
+      // Herkes okuyabilir
+      allow read: if true;
+      
+      // Kimlik doğrulaması yapmış herkes yazabilir (masa siparişi için)
+      allow write: if request.auth != null;
+    }
+    
     // Diğer dosyalar için varsayılan kurallar
     match /{allPaths=**} {
       // Sadece admin kullanıcılar erişebilir

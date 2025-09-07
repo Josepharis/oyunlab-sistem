@@ -251,6 +251,7 @@ class _CreateTaskDialogState extends State<CreateTaskDialog>
     );
   }
 
+
   Widget _buildDifficultyOption(TaskDifficulty difficulty) {
     final isSelected = _selectedDifficulty == difficulty;
     final color = _getDifficultyColor(difficulty);

@@ -488,11 +488,7 @@ class _MenuManagementScreenState extends State<MenuManagementScreen>
     // Düzenleme modunda mevcut görseli göster
     if (isEditing && productToEdit.imageUrl != null) {
       _imageUrl = productToEdit.imageUrl;
-      try {
-        _selectedImage = File(productToEdit.imageUrl!);
-      } catch (e) {
-        _selectedImage = null;
-      }
+      _selectedImage = null; // URL tabanlı görsel için File kullanmıyoruz
     } else {
       _imageUrl = null;
       _selectedImage = null;
@@ -882,35 +878,60 @@ class _MenuManagementScreenState extends State<MenuManagementScreen>
                                                         );
                                                       },
                                                     )
-                                                  : Center(
-                                                      child: Column(
-                                                        mainAxisAlignment:
-                                                            MainAxisAlignment
-                                                                .center,
-                                                        children: [
-                                                          Icon(
-                                                            Icons
-                                                                .add_photo_alternate_rounded,
-                                                            size: 52,
-                                                            color: Colors
-                                                                .grey.shade300,
+                                                  : _imageUrl != null
+                                                      ? Image.network(
+                                                          _imageUrl!,
+                                                          fit: BoxFit.cover,
+                                                          loadingBuilder: (context, child, loadingProgress) {
+                                                            if (loadingProgress == null) return child;
+                                                            return Center(
+                                                              child: CircularProgressIndicator(
+                                                                value: loadingProgress.expectedTotalBytes != null
+                                                                    ? loadingProgress.cumulativeBytesLoaded / loadingProgress.expectedTotalBytes!
+                                                                    : null,
+                                                                color: AppTheme.primaryColor,
+                                                              ),
+                                                            );
+                                                          },
+                                                          errorBuilder: (context, error, stackTrace) {
+                                                            return Center(
+                                                              child: Icon(
+                                                                Icons.broken_image_rounded,
+                                                                size: 64,
+                                                                color: Colors.grey.shade400,
+                                                              ),
+                                                            );
+                                                          },
+                                                        )
+                                                      : Center(
+                                                          child: Column(
+                                                            mainAxisAlignment:
+                                                                MainAxisAlignment
+                                                                    .center,
+                                                            children: [
+                                                              Icon(
+                                                                Icons
+                                                                    .add_photo_alternate_rounded,
+                                                                size: 52,
+                                                                color: Colors
+                                                                    .grey.shade300,
+                                                              ),
+                                                              const SizedBox(
+                                                                  height: 12),
+                                                              Text(
+                                                                'Görsel Eklemek İçin Tıklayın',
+                                                                style: TextStyle(
+                                                                  fontSize: 15,
+                                                                  fontWeight:
+                                                                      FontWeight
+                                                                          .w500,
+                                                                  color: Colors.grey
+                                                                      .shade600,
+                                                                ),
+                                                              ),
+                                                            ],
                                                           ),
-                                                          const SizedBox(
-                                                              height: 12),
-                                                          Text(
-                                                            'Görsel Eklemek İçin Tıklayın',
-                                                            style: TextStyle(
-                                                              fontSize: 15,
-                                                              fontWeight:
-                                                                  FontWeight
-                                                                      .w500,
-                                                              color: Colors.grey
-                                                                  .shade600,
-                                                            ),
-                                                          ),
-                                                        ],
-                                                      ),
-                                                    ),
+                                                        ),
                                             ),
                                           ),
 
@@ -935,7 +956,7 @@ class _MenuManagementScreenState extends State<MenuManagementScreen>
                                           ),
 
                                           // Silme butonu (eğer görsel varsa)
-                                          if (_selectedImage != null)
+                                          if (_selectedImage != null || _imageUrl != null)
                                             Positioned(
                                               top: 10,
                                               right: 10,
@@ -1908,9 +1929,22 @@ class _MenuManagementScreenState extends State<MenuManagementScreen>
                     AspectRatio(
                       aspectRatio: 1.2,
                       child: product.imageUrl != null
-                          ? Image.file(
-                              File(product.imageUrl!),
+                          ? Image.network(
+                              product.imageUrl!,
                               fit: BoxFit.cover,
+                              loadingBuilder: (context, child, loadingProgress) {
+                                if (loadingProgress == null) return child;
+                                return Container(
+                                  color: Colors.grey.shade100,
+                                  child: Center(
+                                    child: CircularProgressIndicator(
+                                      value: loadingProgress.expectedTotalBytes != null
+                                          ? loadingProgress.cumulativeBytesLoaded / loadingProgress.expectedTotalBytes!
+                                          : null,
+                                    ),
+                                  ),
+                                );
+                              },
                               errorBuilder: (context, error, stackTrace) {
                                 return _buildPlaceholderImage(product.category);
                               },
@@ -2140,9 +2174,22 @@ class _MenuManagementScreenState extends State<MenuManagementScreen>
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(12),
                       child: product.imageUrl != null
-                          ? Image.file(
-                              File(product.imageUrl!),
+                          ? Image.network(
+                              product.imageUrl!,
                               fit: BoxFit.cover,
+                              loadingBuilder: (context, child, loadingProgress) {
+                                if (loadingProgress == null) return child;
+                                return Container(
+                                  color: Colors.grey.shade100,
+                                  child: Center(
+                                    child: CircularProgressIndicator(
+                                      value: loadingProgress.expectedTotalBytes != null
+                                          ? loadingProgress.cumulativeBytesLoaded / loadingProgress.expectedTotalBytes!
+                                          : null,
+                                    ),
+                                  ),
+                                );
+                              },
                               errorBuilder: (context, error, stackTrace) {
                                 return _buildPlaceholderImage(product.category);
                               },

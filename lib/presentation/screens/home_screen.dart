@@ -803,11 +803,10 @@ class _HomeScreenState extends State<HomeScreen>
                   // Veri henüz yüklenmediyse, boş bir liste göster
                   final List<Customer> allCustomers = snapshot.data ?? [];
 
-                  // Aktif müşteriler (isActive: true, kalan süresi > 0 ve tamamlanmamış)
+                  // Aktif müşteriler (isActive: true ve tamamlanmamış) - süresi biten çocuklar da gösterilsin
                   final activeCustomers = allCustomers
                       .where((customer) => 
                           customer.isActive && 
-                          customer.currentRemainingSeconds > 0 &&
                           !customer.isCompleted)
                       .toList();
 
@@ -1403,6 +1402,23 @@ class _HomeScreenState extends State<HomeScreen>
                       ),
                     ],
                   ),
+
+                  // Süresi biten çocuklar için kartı kaldır butonu
+                  if (customer.currentRemainingSeconds <= 0) ...[
+                    const SizedBox(height: 14),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _buildActionButton(
+                            icon: Icons.delete_outline_rounded,
+                            label: 'Kartı Kaldır',
+                            color: Colors.red.shade700,
+                            onPressed: () => _showRemoveCardConfirmation(customer),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
 
                   const SizedBox(height: 14),
 
@@ -2964,6 +2980,85 @@ class _HomeScreenState extends State<HomeScreen>
       }
     } catch (e) {
       print('Süre satın alma satış kaydı oluşturulurken hata: $e');
+    }
+  }
+
+  // Kartı kaldır onay dialog'u
+  void _showRemoveCardConfirmation(Customer customer) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(
+              Icons.warning_amber_rounded,
+              color: Colors.red.shade600,
+              size: 24,
+            ),
+            const SizedBox(width: 8),
+            const Text('Kartı Kaldır'),
+          ],
+        ),
+        content: Text(
+          '${customer.childName} adlı çocuğun kartını kaldırmak istediğinizden emin misiniz?\n\nBu işlem geri alınamaz.',
+          style: const TextStyle(fontSize: 16),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: Text(
+              'İptal',
+              style: TextStyle(color: Colors.grey.shade600),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              _removeCustomerCard(customer);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red.shade600,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Kartı Kaldır'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Müşteri kartını kaldır
+  Future<void> _removeCustomerCard(Customer customer) async {
+    try {
+      print('🗑️ Kart kaldırma işlemi başlatılıyor: ${customer.childName}');
+      
+      // Müşteriyi tamamlanmış olarak işaretle
+      await widget.customerRepository.completeCustomer(customer.id);
+      
+      print('✅ Kart başarıyla kaldırıldı: ${customer.childName}');
+      
+      // Başarı mesajı göster
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${customer.childName} adlı çocuğun kartı kaldırıldı'),
+            backgroundColor: Colors.green.shade600,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      print('❌ Kart kaldırma hatası: $e');
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Kart kaldırılırken hata oluştu: $e'),
+            backgroundColor: Colors.red.shade600,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
     }
   }
 

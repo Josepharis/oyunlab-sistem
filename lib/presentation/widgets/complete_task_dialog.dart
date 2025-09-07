@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:io';
 import '../../data/models/task_model.dart';
 import '../../data/models/staff_model.dart';
@@ -86,10 +87,44 @@ class _CompleteTaskDialogState extends State<CompleteTaskDialog>
           _availableStaff = staffList;
           _isLoadingStaff = false;
           
-          // İlk personeli otomatik seç
-          if (_availableStaff.isNotEmpty) {
+          // Mevcut kullanıcıyı otomatik seç (sadece görevi tamamlayan olarak)
+          final firebaseUser = FirebaseAuth.instance.currentUser;
+          print('COMPLETE_TASK_DIALOG: Firebase user: ${firebaseUser?.uid}');
+          print('COMPLETE_TASK_DIALOG: Firebase email: ${firebaseUser?.email}');
+          print('COMPLETE_TASK_DIALOG: Available staff: ${_availableStaff.map((s) => '${s.id}:${s.name}:${s.email}').toList()}');
+          
+          if (firebaseUser != null) {
+            // Firebase UID ile eşleşen personeli bul
+            try {
+              final currentStaff = _availableStaff.firstWhere(
+                (staff) => staff.id == firebaseUser.uid,
+              );
+              print('COMPLETE_TASK_DIALOG: UID ile bulunan staff: ${currentStaff.id}:${currentStaff.name}');
+              _selectedStaffIds.add(currentStaff.id);
+            } catch (e) {
+              print('COMPLETE_TASK_DIALOG: UID ile bulunamadı, email ile deneniyor: $e');
+              // Email ile eşleşen personeli bul
+              try {
+                final currentStaff = _availableStaff.firstWhere(
+                  (staff) => staff.email == firebaseUser.email,
+                );
+                print('COMPLETE_TASK_DIALOG: Email ile bulunan staff: ${currentStaff.id}:${currentStaff.name}');
+                _selectedStaffIds.add(currentStaff.id);
+              } catch (e2) {
+                print('COMPLETE_TASK_DIALOG: Email ile de bulunamadı, ilk personel seçiliyor: $e2');
+                // Eşleşen personel bulunamazsa ilk personeli seç
+                if (_availableStaff.isNotEmpty) {
+                  _selectedStaffIds.add(_availableStaff.first.id);
+                }
+              }
+            }
+          } else if (_availableStaff.isNotEmpty) {
+            print('COMPLETE_TASK_DIALOG: Firebase user yok, ilk personel seçiliyor');
+            // Firebase kullanıcısı yoksa ilk personeli seç
             _selectedStaffIds.add(_availableStaff.first.id);
           }
+          
+          print('COMPLETE_TASK_DIALOG: Seçilen staff IDs: $_selectedStaffIds');
         });
       }
     } catch (e) {
@@ -165,6 +200,7 @@ class _CompleteTaskDialogState extends State<CompleteTaskDialog>
                             _buildStaffSection(),
                             const SizedBox(height: 20),
                             _buildImageSection(),
+                            const SizedBox(height: 20),
                             const SizedBox(height: 24),
                             _buildActionButtons(),
                           ],
@@ -319,17 +355,35 @@ class _CompleteTaskDialogState extends State<CompleteTaskDialog>
                             fontWeight: FontWeight.w500,
                           ),
                         ),
-                        Text(
-                          _isLoadingStaff 
-                            ? 'Yükleniyor...' 
-                            : _availableStaff.isNotEmpty 
-                              ? _availableStaff.first.name 
-                              : 'Personel bulunamadı',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.blue[800],
-                          ),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _isLoadingStaff 
+                                ? 'Yükleniyor...' 
+                                : _getCurrentUserStaffName(),
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.blue[800],
+                              ),
+                            ),
+                            if (!_isLoadingStaff) ...[
+                              const SizedBox(height: 4),
+                              Text(
+                                'DEBUG: Firebase UID: ${FirebaseAuth.instance.currentUser?.uid ?? "null"}',
+                                style: TextStyle(fontSize: 10, color: Colors.red[600]),
+                              ),
+                              Text(
+                                'DEBUG: Firebase Email: ${FirebaseAuth.instance.currentUser?.email ?? "null"}',
+                                style: TextStyle(fontSize: 10, color: Colors.red[600]),
+                              ),
+                              Text(
+                                'DEBUG: Selected IDs: $_selectedStaffIds',
+                                style: TextStyle(fontSize: 10, color: Colors.blue[600]),
+                              ),
+                            ],
+                          ],
                         ),
                       ],
                     ),
@@ -360,12 +414,25 @@ class _CompleteTaskDialogState extends State<CompleteTaskDialog>
                       ),
                       const SizedBox(width: 8),
                       Expanded(
-                        child: Text(
-                          'Birlikte Yapıldı',
-                          style: TextStyle(
-                            color: Colors.blue[700],
-                            fontWeight: FontWeight.w600,
-                          ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Birlikte Yapıldı',
+                              style: TextStyle(
+                                color: Colors.blue[700],
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            if (_selectedStaffIds.isNotEmpty && _selectedStaffIds.length > 1)
+                              Text(
+                                _getSelectedStaffName(),
+                                style: TextStyle(
+                                  color: Colors.blue[600],
+                                  fontSize: 12,
+                                ),
+                              ),
+                          ],
                         ),
                       ),
                       Icon(
@@ -420,7 +487,23 @@ class _CompleteTaskDialogState extends State<CompleteTaskDialog>
                                     ),
                                   )
                                 else
-                                  ..._availableStaff.skip(1).map((staff) => _buildStaffTile(staff)),
+                                  ..._availableStaff.where((staff) {
+                                    // Mevcut kullanıcıyı hariç tut
+                                    final firebaseUser = FirebaseAuth.instance.currentUser;
+                                    if (firebaseUser == null) return true;
+                                    
+                                    // Firebase UID ile eşleşen personeli hariç tut
+                                    try {
+                                      return staff.id != firebaseUser.uid;
+                                    } catch (e) {
+                                      // Email ile eşleşen personeli hariç tut
+                                      try {
+                                        return staff.email != firebaseUser.email;
+                                      } catch (e2) {
+                                        return true;
+                                      }
+                                    }
+                                  }).map((staff) => _buildStaffTile(staff)),
                               ],
                             ),
                           ),
@@ -783,7 +866,54 @@ class _CompleteTaskDialogState extends State<CompleteTaskDialog>
     });
   }
 
+  String _getCurrentUserStaffName() {
+    if (_availableStaff.isEmpty) return 'Personel bulunamadı';
+    
+    // Mevcut kullanıcının Firebase UID'sini al
+    final firebaseUser = FirebaseAuth.instance.currentUser;
+    if (firebaseUser == null) return 'Kullanıcı bulunamadı';
+    
+    // Firebase UID ile eşleşen personeli bul
+    try {
+      final currentStaff = _availableStaff.firstWhere(
+        (staff) => staff.id == firebaseUser.uid,
+      );
+      return currentStaff.name;
+    } catch (e) {
+      // Email ile eşleşen personeli bul
+      try {
+        final currentStaff = _availableStaff.firstWhere(
+          (staff) => staff.email == firebaseUser.email,
+        );
+        return currentStaff.name;
+      } catch (e2) {
+        // Eşleşen personel bulunamazsa ilk personeli göster
+        return _availableStaff.first.name;
+      }
+    }
+  }
+
+  String _getSelectedStaffName() {
+    if (_availableStaff.isEmpty) return 'Personel bulunamadı';
+    
+    // Seçili personel ID'lerini al (mevcut kullanıcı hariç)
+    final selectedStaff = _availableStaff.where((staff) => 
+      _selectedStaffIds.contains(staff.id) && 
+      staff.id != FirebaseAuth.instance.currentUser?.uid
+    ).toList();
+    
+    if (selectedStaff.isEmpty) {
+      return 'Sadece siz';
+    }
+    
+    // Seçili personellerin isimlerini birleştir
+    return selectedStaff.map((staff) => staff.name).join(', ');
+  }
+
   Future<void> _completeTask() async {
+      print('COMPLETE_TASK_DIALOG: _completeTask başladı');
+      print('COMPLETE_TASK_DIALOG: _selectedStaffIds: $_selectedStaffIds');
+    
     if (_selectedImage == null) {
       _scaffoldMessenger?.showSnackBar(
         const SnackBar(
@@ -809,11 +939,16 @@ class _CompleteTaskDialogState extends State<CompleteTaskDialog>
     });
 
     try {
+      print('COMPLETE_TASK_DIALOG: Görsel yüklenmeye başlanıyor...');
       // Görseli Firebase Storage'a yükle ve URL'ini al
       String? imageUrl = null;
       if (_selectedImage != null) {
         imageUrl = await _taskRepository.uploadTaskImage(_selectedImage!, widget.task.id);
+        print('COMPLETE_TASK_DIALOG: Görsel yüklendi: $imageUrl');
       }
+      
+      print('COMPLETE_TASK_DIALOG: Görev tamamlanıyor... Task ID: ${widget.task.id}');
+      print('COMPLETE_TASK_DIALOG: Staff IDs gönderiliyor: $_selectedStaffIds');
       
       // TaskRepository ile görevi tamamla
       await _taskRepository.completeTask(
@@ -821,6 +956,8 @@ class _CompleteTaskDialogState extends State<CompleteTaskDialog>
         _selectedStaffIds, 
         imageUrl
       );
+      
+      print('COMPLETE_TASK_DIALOG: Görev başarıyla tamamlandı!');
 
       if (mounted) {
         Navigator.of(context).pop();

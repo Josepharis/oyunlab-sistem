@@ -27,6 +27,9 @@ class Customer {
   // Satın alma bilgisi
   final bool hasTimePurchase;         // Bu müşteri için süre satın alımı yapıldı mı?
   final int purchasedSeconds;         // Bu girişte satın alınan süre (saniye)
+  
+  // Ödeme bilgisi
+  final String paymentMethod;         // Ödeme yöntemi (Nakit/Kart)
 
   Customer({
     required this.id,
@@ -49,6 +52,7 @@ class Customer {
     this.siblingIds = const [],
     this.hasTimePurchase = false,
     this.purchasedSeconds = 0,
+    this.paymentMethod = 'Nakit',
   });
 
   // KALAN SÜRE HESAPLAMA - YENİ SİSTEM
@@ -227,6 +231,7 @@ class Customer {
       final siblingIds = (json['siblingIds'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
       final hasTimePurchase = json['hasTimePurchase'] as bool? ?? false;
       final purchasedSeconds = json['purchasedSeconds'] as int? ?? 0;
+      final paymentMethod = json['paymentMethod'] as String? ?? 'Nakit';
 
       return Customer(
         id: id,
@@ -249,6 +254,7 @@ class Customer {
         siblingIds: siblingIds,
         hasTimePurchase: hasTimePurchase,
         purchasedSeconds: purchasedSeconds,
+        paymentMethod: paymentMethod,
       );
     } catch (e, stackTrace) {
       print('Customer.fromJson: Kritik hata: $e');
@@ -287,6 +293,7 @@ class Customer {
       'siblingIds': siblingIds,
       'hasTimePurchase': hasTimePurchase,
       'purchasedSeconds': purchasedSeconds,
+      'paymentMethod': paymentMethod,
       // ESKİ SİSTEM UYUMLULUĞU İÇİN
       'durationMinutes': durationMinutes,
       'originalDurationMinutes': originalDurationMinutes,
@@ -315,6 +322,7 @@ class Customer {
     List<String>? siblingIds,
     bool? hasTimePurchase,
     int? purchasedSeconds,
+    String? paymentMethod,
   }) {
     return Customer(
       id: id ?? this.id,
@@ -337,6 +345,7 @@ class Customer {
       siblingIds: siblingIds ?? this.siblingIds,
       hasTimePurchase: hasTimePurchase ?? this.hasTimePurchase,
       purchasedSeconds: purchasedSeconds ?? this.purchasedSeconds,
+      paymentMethod: paymentMethod ?? this.paymentMethod,
     );
   }
 

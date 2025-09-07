@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../../data/models/task_model.dart';
 import '../../data/repositories/task_repository.dart';
 import '../../core/di/service_locator.dart';
 import '../widgets/task_card.dart';
+import '../widgets/completed_task_card.dart';
 import '../widgets/create_task_dialog.dart';
 
 class TaskManagementScreen extends StatefulWidget {
@@ -59,6 +61,9 @@ class _TaskManagementScreenState extends State<TaskManagementScreen>
     });
 
     try {
+      // Önce tüm görevleri kontrol et ve sıfırla
+      await _taskRepository.checkAndResetAllTasks();
+      
       // Gerçek verileri TaskRepository'den al
       final pendingTasks = await _taskRepository.getPendingTasks();
       final allCompletedTasks = await _taskRepository.getCompletedTasks();
@@ -96,6 +101,37 @@ class _TaskManagementScreenState extends State<TaskManagementScreen>
           _isLoading = false;
         });
       }
+    }
+  }
+
+
+  // Bugün tamamlanan görevleri yükle (tarih filtresi olmadan)
+  Future<void> _loadTodayCompletedTasks() async {
+    if (!mounted) return;
+    
+    try {
+      final allCompletedTasks = await _taskRepository.getCompletedTasks();
+      final today = DateTime.now();
+
+      // Bugün tamamlanan görevleri filtrele
+      final todayCompletedTasks = allCompletedTasks.where((task) {
+        if (task.completedAt == null) return false;
+        
+        final taskDate = task.completedAt!;
+        
+        // Aynı gün kontrolü (sadece tarih, saat değil)
+        return taskDate.year == today.year &&
+               taskDate.month == today.month &&
+               taskDate.day == today.day;
+      }).toList();
+
+      if (mounted) {
+        setState(() {
+          _completedTasks = todayCompletedTasks;
+        });
+      }
+    } catch (e) {
+      print('Bugün tamamlanan görevler yüklenirken hata: $e');
     }
   }
 
@@ -237,18 +273,27 @@ class _TaskManagementScreenState extends State<TaskManagementScreen>
                               task: task,
                               onTaskCompleted: () async {
                                 try {
+                                  // Mevcut kullanıcının ID'sini al
+                                  final firebaseUser = FirebaseAuth.instance.currentUser;
+                                  if (firebaseUser == null) {
+                                    _scaffoldMessenger?.showSnackBar(
+                                      const SnackBar(content: Text('Kullanıcı bilgisi bulunamadı')),
+                                    );
+                                    return;
+                                  }
+                                  
                                   // Görevi veritabanında tamamla
                                   await _taskRepository.completeTask(
                                     task.id,
-                                    ['current_staff'], // TODO: Gerçek staff ID'si kullanılacak
+                                    [firebaseUser.uid], // Gerçek kullanıcı ID'si
                                     null, // completedImageUrl
                                   );
                                   
                                   // Widget hala mounted mı kontrol et
                                   if (!mounted) return;
                                   
-                                  // Verileri yeniden yükle (Firebase'den güncel verileri al)
-                                  await _loadTasks();
+                                  // Bugün tamamlanan görevleri yenile (bekleyen görevler aynı kalacak)
+                                  await _loadTodayCompletedTasks();
                                   
                                   if (mounted) {
                                     _scaffoldMessenger?.showSnackBar(
@@ -416,11 +461,8 @@ class _TaskManagementScreenState extends State<TaskManagementScreen>
                           final task = _completedTasks[index];
                           return Padding(
                             padding: const EdgeInsets.only(bottom: 12),
-                            child: TaskCard(
+                            child: CompletedTaskCard(
                               task: task,
-                              onTaskCompleted: () async {
-                                // Tamamlanan görevler için herhangi bir işlem yapmaya gerek yok
-                              },
                             ),
                           );
                         },

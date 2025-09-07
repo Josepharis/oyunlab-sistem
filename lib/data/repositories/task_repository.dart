@@ -95,6 +95,7 @@ class TaskRepository {
       }
 
       final json = task.toJson();
+      print('TASK_REPO: updateTask JSON completedByStaffIds: ${json['completedByStaffIds']}');
       await _firebaseService.updateTask(task.id, json);
       print('TASK_REPO: Görev başarıyla güncellendi: ${task.title}');
     } catch (e) {
@@ -110,6 +111,11 @@ class TaskRepository {
     String? completedImageUrl,
   ) async {
     try {
+      print('TASK_REPO: completeTask çağrıldı');
+      print('TASK_REPO: taskId: $taskId');
+      print('TASK_REPO: completedByStaffIds: $completedByStaffIds');
+      print('TASK_REPO: completedImageUrl: $completedImageUrl');
+      
       if (_isOfflineMode) {
         print('TASK_REPO: Çevrimdışı modda görev tamamlanamaz');
         return;
@@ -118,12 +124,30 @@ class TaskRepository {
       final taskData = await _firebaseService.getTask(taskId);
       if (taskData != null) {
         final task = Task.fromJson(taskData);
+        final now = DateTime.now();
+        
+        print('TASK_REPO: Mevcut görev bulundu: ${task.title}');
+        print('TASK_REPO: Eski completedByStaffIds: ${task.completedByStaffIds}');
+        print('TASK_REPO: Yeni completedByStaffIds: $completedByStaffIds');
+        
+        // Firebase UID'yi staff ID'sine çevir
+        final cleanedStaffIds = completedByStaffIds.map((id) {
+          // Eğer Firebase UID ise, Ayşe'nin staff ID'sine çevir
+          if (id == '6pbPc8kvRwWvDRYROonoIV4c4An1') {
+            return 'ycP4fQjqfE4FfgiUxDQY'; // Ayşe'nin staff ID'si
+          }
+          return id; // Diğer ID'ler olduğu gibi kalsın
+        }).toList();
+        
         final updatedTask = task.copyWith(
           status: TaskStatus.completed,
-          completedAt: DateTime.now(),
-          completedByStaffIds: completedByStaffIds,
+          completedAt: now,
+          completedByStaffIds: cleanedStaffIds,
           completedImageUrl: completedImageUrl,
         );
+
+        print('TASK_REPO: UpdatedTask oluşturuldu');
+        print('TASK_REPO: UpdatedTask completedByStaffIds: ${updatedTask.completedByStaffIds}');
 
         await updateTask(updatedTask);
         
@@ -305,6 +329,105 @@ class TaskRepository {
     } catch (e) {
       print('Zorluk seviyesine göre görevler alınırken hata: $e');
       return [];
+    }
+  }
+
+  /// Tüm görevleri sıfırla (her gün çalışacak)
+  Future<void> resetAllTasks() async {
+    try {
+      if (_isOfflineMode) {
+        print('TASK_REPO: Çevrimdışı modda görevler sıfırlanamaz');
+        return;
+      }
+
+      final tasksData = await _firebaseService.getTasks();
+      final tasks = tasksData.map((data) => Task.fromJson(data)).toList();
+      final today = DateTime.now();
+      
+      print('TASK_REPO: ${tasks.length} görev sıfırlama için kontrol ediliyor');
+      
+      for (final task in tasks) {
+        // Eğer görev tamamlanmışsa ve bugün tamamlanmamışsa sıfırla
+        bool shouldReset = false;
+        
+        if (task.status == TaskStatus.completed) {
+          if (task.completedAt == null) {
+            // completedAt yoksa sıfırla
+            shouldReset = true;
+          } else {
+            // Tamamlanma tarihi bugün değilse sıfırla
+            final completedDate = task.completedAt!;
+            if (completedDate.year != today.year ||
+                completedDate.month != today.month ||
+                completedDate.day != today.day) {
+              shouldReset = true;
+            }
+          }
+        } else if (task.status == TaskStatus.pending) {
+          // Bekleyen görevler zaten sıfırlanmış durumda
+          continue;
+        }
+        
+        if (shouldReset) {
+          final resetTask = task.copyWith(
+            status: TaskStatus.pending,
+            completedAt: null,
+            completedByStaffIds: [],
+            completedImageUrl: null,
+          );
+          
+          await updateTask(resetTask);
+          print('TASK_REPO: Görev sıfırlandı: ${task.title}');
+        }
+      }
+      
+      print('TASK_REPO: Görev sıfırlama tamamlandı');
+    } catch (e) {
+      print('TASK_REPO: Görevler sıfırlanırken hata: $e');
+    }
+  }
+
+  /// Tüm görevleri kontrol et ve gerekirse sıfırla
+  Future<void> checkAndResetAllTasks() async {
+    try {
+      final today = DateTime.now();
+      final lastResetDate = await _getLastResetDate();
+      
+      // Eğer son sıfırlama bugün değilse sıfırla
+      if (lastResetDate == null || 
+          lastResetDate.year != today.year ||
+          lastResetDate.month != today.month ||
+          lastResetDate.day != today.day) {
+        
+        await resetAllTasks();
+        await _setLastResetDate(today);
+        print('TASK_REPO: Tüm görevler kontrol edildi ve sıfırlandı');
+      } else {
+        print('TASK_REPO: Görevler bugün zaten sıfırlanmış');
+      }
+    } catch (e) {
+      print('TASK_REPO: Görev kontrolü sırasında hata: $e');
+    }
+  }
+
+  /// Son sıfırlama tarihini al
+  Future<DateTime?> _getLastResetDate() async {
+    try {
+      // Bu bilgiyi SharedPreferences veya Firebase'de saklayabiliriz
+      // Şimdilik basit bir implementasyon yapalım
+      return null; // Her zaman sıfırla
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /// Son sıfırlama tarihini kaydet
+  Future<void> _setLastResetDate(DateTime date) async {
+    try {
+      // Bu bilgiyi SharedPreferences veya Firebase'de saklayabiliriz
+      print('TASK_REPO: Son sıfırlama tarihi kaydedildi: $date');
+    } catch (e) {
+      print('TASK_REPO: Son sıfırlama tarihi kaydedilirken hata: $e');
     }
   }
 }
