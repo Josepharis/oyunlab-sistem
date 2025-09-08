@@ -1,5 +1,3 @@
-import 'dart:convert';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/order_model.dart';
 
@@ -28,14 +26,27 @@ class MenuRepository {
       final snapshot = await _menuCollection.get();
 
       if (snapshot.docs.isNotEmpty) {
-        _menuItems = snapshot.docs.map((doc) {
+        final rawItems = snapshot.docs.map((doc) {
           final data = doc.data() as Map<String, dynamic>;
           // Firestore document ID'sini ekle
           data['id'] = doc.id;
           return ProductItem.fromJson(data);
         }).toList();
 
-        print("✅ ${_menuItems.length} ürün Firebase'den başarıyla yüklendi");
+        // Duplicate ürünleri temizle (aynı isimde olanları)
+        final Map<String, ProductItem> uniqueItems = {};
+        for (var item in rawItems) {
+          if (!uniqueItems.containsKey(item.name)) {
+            uniqueItems[item.name] = item;
+            print("📦 Ürün eklendi: ${item.name} (Stok: ${item.stock})");
+          } else {
+            print("⚠️ Duplicate ürün bulundu ve atlandı: ${item.name}");
+          }
+        }
+
+        _menuItems = uniqueItems.values.toList();
+        print("✅ ${_menuItems.length} benzersiz ürün Firebase'den başarıyla yüklendi");
+        print("🗑️ ${rawItems.length - _menuItems.length} duplicate ürün temizlendi");
       } else {
         print("ℹ️ Firebase'de hiç ürün bulunamadı");
         _menuItems = [];
@@ -52,6 +63,19 @@ class MenuRepository {
     try {
       print("🔄 ${items.length} ürün Firebase'e kaydediliyor...");
 
+      // Duplicate ürünleri temizle (aynı isimde olanları)
+      final Map<String, ProductItem> uniqueItems = {};
+      for (var item in items) {
+        if (!uniqueItems.containsKey(item.name)) {
+          uniqueItems[item.name] = item;
+        } else {
+          print("⚠️ Duplicate ürün atlandı: ${item.name}");
+        }
+      }
+
+      final cleanedItems = uniqueItems.values.toList();
+      print("🧹 ${items.length - cleanedItems.length} duplicate ürün temizlendi");
+
       // Önce tüm mevcut öğeleri temizle
       final snapshot = await _menuCollection.get();
       for (var doc in snapshot.docs) {
@@ -59,13 +83,13 @@ class MenuRepository {
       }
 
       // Yeni ürünleri ekle
-      for (var item in items) {
+      for (var item in cleanedItems) {
         await _menuCollection.add(item.toJson());
       }
 
       // Kaydedilen öğeleri güncelle
-      _menuItems = List.from(items);
-      print("✅ Ürünler başarıyla kaydedildi");
+      _menuItems = List.from(cleanedItems);
+      print("✅ ${cleanedItems.length} benzersiz ürün başarıyla kaydedildi");
     } catch (e) {
       print("❌ Ürün kaydetme hatası: $e");
       rethrow;
@@ -76,6 +100,26 @@ class MenuRepository {
   Future<void> addProduct(ProductItem item) async {
     try {
       print("🔄 Yeni ürün ekleniyor: ${item.name}");
+      
+      // Aynı isimde ürün var mı kontrol et
+      final existingIndex = _menuItems.indexWhere((existingItem) => existingItem.name == item.name);
+      if (existingIndex != -1) {
+        print("⚠️ Aynı isimde ürün zaten mevcut: ${item.name}");
+        print("🔄 Mevcut ürün güncelleniyor...");
+        
+        // Mevcut ürünü güncelle
+        final existingItem = _menuItems[existingIndex];
+        final updatedItem = item.copyWith(id: existingItem.id);
+        
+        // Firebase'de güncelle
+        await _menuCollection.doc(existingItem.id).update(updatedItem.toJson());
+        
+        // Local listeyi güncelle
+        _menuItems[existingIndex] = updatedItem;
+        print("✅ Ürün başarıyla güncellendi");
+        return;
+      }
+      
       await _menuCollection.add(item.toJson());
 
       // Listeye ekle
@@ -112,122 +156,24 @@ class MenuRepository {
   // Menüyü temizle
   Future<void> clearMenu() async {
     try {
+      print("🗑️ Tüm menü öğeleri siliniyor...");
+      
+      // Firebase'den tüm ürünleri sil
       final snapshot = await _menuCollection.get();
       for (var doc in snapshot.docs) {
         await doc.reference.delete();
+        print("   🗑️ Firebase'den silindi: ${doc.id}");
       }
+      
+      // Local listeyi de temizle
       _menuItems.clear();
-      print("✅ Tüm menü öğeleri silindi");
+      
+      print("✅ Tüm menü öğeleri hem Firebase'den hem local'den silindi");
+      print("📊 Silinen ürün sayısı: ${snapshot.docs.length}");
     } catch (e) {
       print("❌ Menü temizleme hatası: $e");
       rethrow;
     }
   }
 
-  // Test ürünleri oluştur
-  Future<void> createTestProducts() async {
-    final testItems = _createTestProducts();
-    await saveMenuItems(testItems);
-  }
-
-  // Test ürünleri oluştur
-  List<ProductItem> _createTestProducts() {
-    return [
-      // YİYECEKLER
-      ProductItem(
-        id: 'test_food_1',
-        name: 'Patates Kızartması',
-        price: 35.0,
-        category: ProductCategory.food,
-        stock: 50,
-      ),
-      ProductItem(
-        id: 'test_food_2',
-        name: 'Çıtır Tavuk',
-        price: 45.0,
-        category: ProductCategory.food,
-        stock: 30,
-      ),
-      ProductItem(
-        id: 'test_food_3',
-        name: 'Tost',
-        price: 30.0,
-        category: ProductCategory.food,
-        stock: 25,
-      ),
-      // İÇECEKLER
-      ProductItem(
-        id: 'test_drink_1',
-        name: 'Su',
-        price: 10.0,
-        category: ProductCategory.drink,
-        stock: 100,
-      ),
-      ProductItem(
-        id: 'test_drink_2',
-        name: 'Kola',
-        price: 20.0,
-        category: ProductCategory.drink,
-        stock: 75,
-      ),
-      // TATLILAR
-      ProductItem(
-        id: 'test_dessert_1',
-        name: 'Dondurma',
-        price: 15.0,
-        category: ProductCategory.dessert,
-        stock: 30,
-      ),
-      ProductItem(
-        id: 'test_dessert_2',
-        name: 'Çikolatalı Pasta',
-        price: 30.0,
-        category: ProductCategory.dessert,
-        stock: 15,
-      ),
-      // OYUNCAKLAR
-      ProductItem(
-        id: 'test_toy_1',
-        name: 'Küçük Oyuncak',
-        price: 30.0,
-        category: ProductCategory.toy,
-        stock: 25,
-      ),
-      ProductItem(
-        id: 'test_toy_2',
-        name: 'Peluş Oyuncak',
-        price: 50.0,
-        category: ProductCategory.toy,
-        stock: 20,
-      ),
-      ProductItem(
-        id: 'test_toy_3',
-        name: 'Araba',
-        price: 40.0,
-        category: ProductCategory.toy,
-        stock: 30,
-      ),
-      ProductItem(
-        id: 'test_toy_4',
-        name: 'Bebek',
-        price: 45.0,
-        category: ProductCategory.toy,
-        stock: 18,
-      ),
-      ProductItem(
-        id: 'test_toy_5',
-        name: 'Lego (Küçük Set)',
-        price: 70.0,
-        category: ProductCategory.toy,
-        stock: 15,
-      ),
-      ProductItem(
-        id: 'test_toy_6',
-        name: 'Balon',
-        price: 10.0,
-        category: ProductCategory.toy,
-        stock: 100,
-      ),
-    ];
-  }
 }

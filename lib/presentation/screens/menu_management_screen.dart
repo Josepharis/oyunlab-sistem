@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
 import 'dart:ui';
+import 'package:uuid/uuid.dart';
 import '../../core/theme/app_theme.dart';
 import '../../data/models/order_model.dart';
 import '../../data/repositories/menu_repository.dart';
@@ -21,6 +22,7 @@ class _MenuManagementScreenState extends State<MenuManagementScreen>
   final TextEditingController _searchController = TextEditingController();
   late PageController _pageController;
   final ScrollController _scrollController = ScrollController();
+  final Uuid _uuid = const Uuid();
 
   // Menü repository
   final MenuRepository _menuRepository = MenuRepository();
@@ -35,6 +37,7 @@ class _MenuManagementScreenState extends State<MenuManagementScreen>
   bool _isGridView = false;
   bool _isSearchFocused = false;
   bool _isLoading = true;
+  bool _isSaving = false; // Kaydetme durumu için
 
   @override
   void initState() {
@@ -55,11 +58,10 @@ class _MenuManagementScreenState extends State<MenuManagementScreen>
         await _menuRepository.loadMenuItems();
         _menuItems = List.from(_menuRepository.menuItems);
         
+        print("📦 Menü yüklendi: ${_menuItems.length} ürün");
+        
         if (_menuItems.isEmpty) {
-          print("Menü listesi boş! Test ürünleri oluşturuluyor...");
-          await _menuRepository.createTestProducts();
-          _menuItems = List.from(_menuRepository.menuItems);
-          print("Test ürünleri oluşturuldu: ${_menuItems.length} ürün");
+          print("Menü listesi boş! Kullanıcı kendi ürünlerini ekleyebilir.");
         } else {
           print("Mevcut menü yüklendi: ${_menuItems.length} ürün");
         }
@@ -91,8 +93,8 @@ class _MenuManagementScreenState extends State<MenuManagementScreen>
 
   @override
   void dispose() {
-    // Ekrandan çıkarken menü öğelerini kaydet
-    _menuRepository.saveMenuItems(_menuItems);
+    // Kaydetme işlemi kaldırıldı - zaten her işlemde kaydediliyor
+    // Gereksiz duplicate kayıtları önlemek için
 
     _searchController.dispose();
     _tabController.dispose();
@@ -1183,7 +1185,7 @@ class _MenuManagementScreenState extends State<MenuManagementScreen>
 
                                   // Kaydet Butonu
                                   ElevatedButton.icon(
-                                    onPressed: () {
+                                    onPressed: _isSaving ? null : () async {
                                       // Ad validasyonu
                                       if (nameController.text.isEmpty) {
                                         setDialogState(() {
@@ -1213,7 +1215,7 @@ class _MenuManagementScreenState extends State<MenuManagementScreen>
                                       }
 
                                       // Ürünü kaydet
-                                      _saveProduct(
+                                      await _saveProduct(
                                         nameController.text,
                                         priceController.text,
                                         descriptionController.text,
@@ -1221,11 +1223,24 @@ class _MenuManagementScreenState extends State<MenuManagementScreen>
                                         isEditing ? productToEdit : null,
                                         stockController.text,
                                       );
-                                      Navigator.pop(context);
+                                      if (mounted) {
+                                        Navigator.pop(context);
+                                      }
                                     },
-                                    icon: const Icon(Icons.save_rounded),
+                                    icon: _isSaving 
+                                        ? const SizedBox(
+                                            width: 16,
+                                            height: 16,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                            ),
+                                          )
+                                        : const Icon(Icons.save_rounded),
                                     label: Text(
-                                      isEditing ? 'Güncelle' : 'Kaydet',
+                                      _isSaving 
+                                          ? 'Kaydediliyor...' 
+                                          : (isEditing ? 'Güncelle' : 'Kaydet'),
                                     ),
                                     style: ElevatedButton.styleFrom(
                                       backgroundColor: AppTheme.primaryColor,
@@ -1337,59 +1352,92 @@ class _MenuManagementScreenState extends State<MenuManagementScreen>
   }
 
   // Ürün kaydet
-  void _saveProduct(
+  Future<void> _saveProduct(
     String name,
     String priceText,
     String description,
     ProductCategory category,
     ProductItem? productToEdit,
     String stockText,
-  ) {
-    final price = double.parse(priceText.replaceAll(',', '.'));
-    final stock = int.parse(stockText);
+  ) async {
+    // Zaten kaydetme işlemi devam ediyorsa bekle
+    if (_isSaving) {
+      print("⚠️ Kaydetme işlemi zaten devam ediyor, atlanıyor...");
+      return;
+    }
 
-    final newProduct = ProductItem(
-      id: productToEdit?.id ?? DateTime.now().millisecondsSinceEpoch.toString(), // Mevcut ürün varsa ID'sini kullan, yoksa yeni ID oluştur
-      name: name,
-      price: price,
-      category: category,
-      imageUrl: _imageUrl,
-      description: description.isNotEmpty ? description : null,
-      stock: stock,
-    );
+    try {
+      setState(() {
+        _isSaving = true;
+      });
 
-    setState(() {
-      if (productToEdit != null) {
-        // Ürünü güncelle
-        final index = _menuItems.indexOf(productToEdit);
-        if (index != -1) {
-          _menuItems[index] = newProduct;
+      final price = double.parse(priceText.replaceAll(',', '.'));
+      final stock = int.parse(stockText);
+
+      final newProduct = ProductItem(
+        id: productToEdit?.id ?? _uuid.v4(), // Mevcut ürün varsa ID'sini kullan, yoksa güvenli UUID oluştur
+        name: name,
+        price: price,
+        category: category,
+        imageUrl: _imageUrl,
+        description: description.isNotEmpty ? description : null,
+        stock: stock,
+      );
+
+      // Local listeyi güncelle
+      setState(() {
+        if (productToEdit != null) {
+          // Ürünü güncelle
+          final index = _menuItems.indexOf(productToEdit);
+          if (index != -1) {
+            _menuItems[index] = newProduct;
+          }
+        } else {
+          // Yeni ürün ekle
+          _menuItems.add(newProduct);
         }
-      } else {
-        // Yeni ürün ekle
-        _menuItems.add(newProduct);
+      });
+
+      // MenuRepository üzerinden kaydet - Firebase ve yerel depolamaya kaydet
+      await _menuRepository.saveMenuItems(_menuItems);
+
+      // Başarı bildirimi göster
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              productToEdit != null
+                  ? '${newProduct.name} güncellendi'
+                  : '${newProduct.name} eklendi',
+            ),
+            backgroundColor: Colors.green,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+          ),
+        );
       }
-    });
-
-    // MenuRepository üzerinden kaydet - Firebase ve yerel depolamaya kaydet
-    _menuRepository.saveMenuItems(_menuItems);
-
-    // Başarı bildirimi göster
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          productToEdit != null
-              ? '${newProduct.name} güncellendi'
-              : '${newProduct.name} eklendi',
-        ),
-        backgroundColor: Colors.green,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(10),
-        ),
-      ),
-    );
+    } catch (e) {
+      print("❌ Ürün kaydetme hatası: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Ürün kaydedilirken hata oluştu: $e'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSaving = false;
+        });
+      }
+    }
   }
+
 
   // Ürün silme işlemi
   void _deleteProduct(ProductItem product) {
@@ -1457,25 +1505,48 @@ class _MenuManagementScreenState extends State<MenuManagementScreen>
           const SizedBox(width: 8),
           // Sil Butonu
           ElevatedButton(
-            onPressed: () {
-              setState(() {
-                _menuItems.remove(product);
+            onPressed: _isSaving ? null : () async {
+              try {
+                setState(() {
+                  _isSaving = true;
+                  _menuItems.remove(product);
+                });
 
                 // MenuRepository üzerinden kaydet - Firebase ve yerel depolamaya kaydet
-                _menuRepository.saveMenuItems(_menuItems);
-              });
-              Navigator.pop(context);
+                await _menuRepository.saveMenuItems(_menuItems);
+                
+                if (mounted) {
+                  Navigator.pop(context);
 
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('${product.name} silindi'),
-                  backgroundColor: Colors.red.shade700,
-                  behavior: SnackBarBehavior.floating,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                ),
-              );
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('${product.name} silindi'),
+                      backgroundColor: Colors.red.shade700,
+                      behavior: SnackBarBehavior.floating,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                  );
+                }
+              } catch (e) {
+                print("❌ Ürün silme hatası: $e");
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Ürün silinirken hata oluştu: $e'),
+                      backgroundColor: Colors.red,
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                }
+              } finally {
+                if (mounted) {
+                  setState(() {
+                    _isSaving = false;
+                  });
+                }
+              }
             },
             style: ElevatedButton.styleFrom(
               elevation: 0,
@@ -1486,13 +1557,22 @@ class _MenuManagementScreenState extends State<MenuManagementScreen>
                 borderRadius: BorderRadius.circular(12),
               ),
             ),
-            child: const Text(
-              'Sil',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
+            child: _isSaving 
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                    ),
+                  )
+                : const Text(
+                    'Sil',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
           ),
         ],
       ),
@@ -1657,7 +1737,7 @@ class _MenuManagementScreenState extends State<MenuManagementScreen>
 
                   const SizedBox(width: 12),
 
-                  // Yeni ürün ekleme butonu (3 nokta yerine)
+                  // Yeni ürün ekleme butonu
                   Container(
                     decoration: BoxDecoration(
                       color: AppTheme.primaryColor,
