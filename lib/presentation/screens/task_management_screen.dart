@@ -135,6 +135,35 @@ class _TaskManagementScreenState extends State<TaskManagementScreen>
     }
   }
 
+  // Tamamlanan görevleri seçilen tarihe göre yükle
+  Future<void> _loadCompletedTasksForDate(DateTime date) async {
+    if (!mounted) return;
+    
+    try {
+      final allCompletedTasks = await _taskRepository.getCompletedTasks();
+
+      // Seçilen tarihe göre tamamlanan görevleri filtrele
+      final filteredCompletedTasks = allCompletedTasks.where((task) {
+        if (task.completedAt == null) return false;
+        
+        final taskDate = task.completedAt!;
+        
+        // Aynı gün kontrolü (sadece tarih, saat değil)
+        return taskDate.year == date.year &&
+               taskDate.month == date.month &&
+               taskDate.day == date.day;
+      }).toList();
+
+      if (mounted) {
+        setState(() {
+          _completedTasks = filteredCompletedTasks;
+        });
+      }
+    } catch (e) {
+      print('Seçilen tarih için tamamlanan görevler yüklenirken hata: $e');
+    }
+  }
+
   // Tarih seçici
   Future<void> _selectDate() async {
     final DateTime? picked = await showDatePicker(
@@ -149,8 +178,8 @@ class _TaskManagementScreenState extends State<TaskManagementScreen>
       setState(() {
         _selectedDate = picked;
       });
-      // Tarih değiştiğinde görevleri yeniden yükle
-      await _loadTasks();
+      // Tarih değiştiğinde sadece tamamlanan görevleri yeniden yükle
+      await _loadCompletedTasksForDate(picked);
     }
   }
 
@@ -292,7 +321,12 @@ class _TaskManagementScreenState extends State<TaskManagementScreen>
                                   // Widget hala mounted mı kontrol et
                                   if (!mounted) return;
                                   
-                                  // Bugün tamamlanan görevleri yenile (bekleyen görevler aynı kalacak)
+                                  // Bekleyen görevlerden tamamlanan görevi kaldır
+                                  setState(() {
+                                    _pendingTasks.removeWhere((t) => t.id == task.id);
+                                  });
+                                  
+                                  // Bugün tamamlanan görevleri yenile
                                   await _loadTodayCompletedTasks();
                                   
                                   if (mounted) {
@@ -407,7 +441,7 @@ class _TaskManagementScreenState extends State<TaskManagementScreen>
                     setState(() {
                       _selectedDate = today;
                     });
-                    _loadTasks();
+                    _loadTodayCompletedTasks();
                   }
                 },
                 child: const Text(
@@ -453,7 +487,9 @@ class _TaskManagementScreenState extends State<TaskManagementScreen>
                       ),
                     )
                   : RefreshIndicator(
-                      onRefresh: _loadTasks,
+                      onRefresh: () async {
+                        await _loadCompletedTasksForDate(_selectedDate);
+                      },
                       child: ListView.builder(
                         padding: const EdgeInsets.all(16),
                         itemCount: _completedTasks.length,

@@ -118,33 +118,10 @@ class _HomeScreenState extends State<HomeScreen>
 
   // Masa ekleme dialog'u
   Future<void> _showAddTableDialog() async {
-    // Loading dialog'u göster
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        content: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            CircularProgressIndicator(color: AppTheme.primaryColor),
-            const SizedBox(width: 16),
-            const Text('Müşteri bilgileri yükleniyor...'),
-          ],
-        ),
-      ),
-    );
-
     try {
-      // Firebase'den güncel müşteri listesini al
-      List<Customer> customers = [];
-      try {
-        customers = await widget.customerRepository.getActiveCustomers();
-        print('HOME_SCREEN: Masa ekleme dialog\'unda ${customers.length} aktif müşteri bulundu');
-      } catch (e) {
-        print('HOME_SCREEN: Aktif müşteriler alınamadı: $e');
-        // Hata durumunda repository'deki listeyi kullan
-        customers = widget.customerRepository.customers;
-      }
+      // Cache'lenmiş müşteri listesini kullan (hızlı)
+      List<Customer> customers = widget.customerRepository.customers;
+      print('HOME_SCREEN: Masa ekleme dialog\'unda ${customers.length} müşteri bulundu (cache\'den)');
       
       // Firebase'den mevcut masaları al
       List<TableOrder> existingTables = [];
@@ -156,8 +133,8 @@ class _HomeScreenState extends State<HomeScreen>
       
       // Masası olmayan aktif çocukları bul
       final customersWithoutTable = customers.where((customer) {
-        // Aktif olan çocuklar - YENİ SİSTEM: currentRemainingSeconds kullan
-        if (customer.currentRemainingSeconds <= 0 || customer.ticketNumber <= 0) {
+        // Sadece aktif müşteriler (tamamlanmamış ve kalan süresi olan)
+        if (!customer.isActive || customer.isCompleted || customer.ticketNumber <= 0) {
           return false;
         }
         
@@ -176,13 +153,6 @@ class _HomeScreenState extends State<HomeScreen>
       }
 
       if (!mounted) return;
-
-      // Loading dialog'u kapat
-      Navigator.of(context).pop();
-
-      setState(() {
-        // UI'ı güncelle
-      });
 
       showDialog(
         context: context,
@@ -355,6 +325,7 @@ class _HomeScreenState extends State<HomeScreen>
       final newTable = TableOrder(
         tableNumber: customer.ticketNumber, // Bilet numarası masa numarası olarak kullan
         customerName: customer.parentName,
+        childName: customer.childName,
         ticketNumber: customer.ticketNumber,
         childCount: siblings.length,
         isManual: false, // Müşteri kaydından otomatik oluşturulan masa
@@ -449,6 +420,7 @@ class _HomeScreenState extends State<HomeScreen>
       final newTable = TableOrder(
         tableNumber: nextTableNumber,
         customerName: customerName,
+        childName: '', // Manuel masalar için boş string
         ticketNumber: 0, // Manuel masalar için 0
         childCount: 1, // Varsayılan olarak 1 çocuk
         isManual: true, // Manuel olarak işaretle

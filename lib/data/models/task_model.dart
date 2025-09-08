@@ -136,27 +136,35 @@ class Task {
 class TaskComplaint {
   final String id;
   final String complaintText;
+  final String? complaintImageUrl;
   final DateTime createdAt;
   final bool isAnonymous;
+  final String? reporterName; // Anonim değilse isim
 
   TaskComplaint({
     required this.id,
     required this.complaintText,
+    this.complaintImageUrl,
     required this.createdAt,
     required this.isAnonymous,
+    this.reporterName,
   });
 
   TaskComplaint copyWith({
     String? id,
     String? complaintText,
+    String? complaintImageUrl,
     DateTime? createdAt,
     bool? isAnonymous,
+    String? reporterName,
   }) {
     return TaskComplaint(
       id: id ?? this.id,
       complaintText: complaintText ?? this.complaintText,
+      complaintImageUrl: complaintImageUrl ?? this.complaintImageUrl,
       createdAt: createdAt ?? this.createdAt,
       isAnonymous: isAnonymous ?? this.isAnonymous,
+      reporterName: reporterName ?? this.reporterName,
     );
   }
 
@@ -164,8 +172,10 @@ class TaskComplaint {
     return {
       'id': id,
       'complaintText': complaintText,
+      'complaintImageUrl': complaintImageUrl,
       'createdAt': Timestamp.fromDate(createdAt),
       'isAnonymous': isAnonymous,
+      'reporterName': reporterName,
     };
   }
 
@@ -173,24 +183,30 @@ class TaskComplaint {
     return TaskComplaint(
       id: json['id'] ?? '',
       complaintText: json['complaintText'] ?? '',
+      complaintImageUrl: json['complaintImageUrl'],
       createdAt: json['createdAt'] != null
           ? (json['createdAt'] is Timestamp 
               ? (json['createdAt'] as Timestamp).toDate()
               : DateTime.parse(json['createdAt']))
           : DateTime.now(),
       isAnonymous: json['isAnonymous'] ?? true,
+      reporterName: json['reporterName'],
     );
   }
 
   factory TaskComplaint.create({
     required String complaintText,
+    String? complaintImageUrl,
     bool isAnonymous = true,
+    String? reporterName,
   }) {
     return TaskComplaint(
       id: '',
       complaintText: complaintText,
+      complaintImageUrl: complaintImageUrl,
       createdAt: DateTime.now(),
       isAnonymous: isAnonymous,
+      reporterName: reporterName,
     );
   }
 }

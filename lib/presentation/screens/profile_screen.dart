@@ -761,6 +761,74 @@ class _ProfileScreenState extends State<ProfileScreen>
     return total;
   }
 
+  // Filtrelenmiş satışlara göre toplam satış tutarını hesapla
+  double _getFilteredTotalSales() {
+    // Tarih aralığına göre satışları filtrele
+    final filteredSales = _salesHistory.where((sale) {
+      final saleDate = DateTime(
+        sale.date.year,
+        sale.date.month,
+        sale.date.day,
+      );
+      final startDate = DateTime(
+        _salesStartDate.year,
+        _salesStartDate.month,
+        _salesStartDate.day,
+      );
+      final endDate = DateTime(
+        _salesEndDate.year,
+        _salesEndDate.month,
+        _salesEndDate.day,
+      );
+      
+      return saleDate.isAtSameMomentAs(startDate) || 
+             saleDate.isAtSameMomentAs(endDate) ||
+             (saleDate.isAfter(startDate) && saleDate.isBefore(endDate));
+    }).toList();
+
+    print('🔍 FİLTRELENMİŞ TOPLAM SATIŞ HESAPLAMA:');
+    print('   - Tarih aralığı: ${_salesStartDate.day}/${_salesStartDate.month}/${_salesStartDate.year} - ${_salesEndDate.day}/${_salesEndDate.month}/${_salesEndDate.year}');
+    print('   - Filtrelenmiş satış sayısı: ${filteredSales.length}');
+    
+    double total = 0.0;
+    int normalSales = 0;
+    int cancelledSales = 0;
+    int negativeSales = 0;
+    
+    for (var sale in filteredSales) {
+      // Negatif tutarlı satışları atla
+      if (sale.amount < 0) {
+        negativeSales++;
+        continue;
+      }
+      
+      if (sale.status == 'İptal Edildi') {
+        cancelledSales++;
+        continue;
+      } else {
+        total += sale.amount;
+        normalSales++;
+      }
+    }
+    
+    print('   - FİLTRELENMİŞ ÖZET:');
+    print('     → Normal satışlar: $normalSales adet');
+    print('     → İptal edilen satışlar: $cancelledSales adet');
+    print('     → Negatif tutarlı satışlar: $negativeSales adet');
+    print('   - FİLTRELENMİŞ TOPLAM SONUÇ: ${total}₺');
+    return total;
+  }
+
+  // Mevcut sekmeye göre toplam satış tutarını hesapla
+  double _getTotalSalesForCurrentTab() {
+    // Eğer satışlarım sekmesindeyse filtrelenmiş toplamı döndür
+    if (_tabController.index == 1) {
+      return _getFilteredTotalSales();
+    }
+    // Aksi halde tüm satışların toplamını döndür
+    return _getTotalSales();
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
@@ -913,7 +981,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                           title: 'Toplam Satış',
                           value: _isLoadingSales 
                               ? 'Yükleniyor...'
-                              : '${_getTotalSales().toStringAsFixed(2)} ₺',
+                              : '${_getTotalSalesForCurrentTab().toStringAsFixed(2)} ₺',
                         ),
                       ),
                     ],

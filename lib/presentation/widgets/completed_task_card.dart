@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../data/models/task_model.dart';
 import '../../data/repositories/admin_user_repository.dart';
+import 'task_complaint_dialog.dart';
 
 class CompletedTaskCard extends StatefulWidget {
   final Task task;
@@ -34,41 +35,24 @@ class _CompletedTaskCardState extends State<CompletedTaskCard> {
   }
 
   Future<void> _loadStaffNames() async {
-    // Debug log'ları ekrana yazdır
-    print('COMPLETED_TASK_CARD: _loadStaffNames çağrıldı');
-    print('COMPLETED_TASK_CARD: Task status: ${widget.task.status}');
-    print('COMPLETED_TASK_CARD: completedByStaffIds: ${widget.task.completedByStaffIds}');
-    print('COMPLETED_TASK_CARD: completedByStaffIds length: ${widget.task.completedByStaffIds.length}');
-    
     // Sadece tamamlanan görevler için personel isimlerini yükle
     if (widget.task.status != TaskStatus.completed || widget.task.completedByStaffIds.isEmpty) {
-      print('COMPLETED_TASK_CARD: Koşullar sağlanmadı - status: ${widget.task.status}, isEmpty: ${widget.task.completedByStaffIds.isEmpty}');
       return;
     }
     
-    print('COMPLETED_TASK_CARD: Personel isimleri yükleniyor...');
     setState(() {
       _isLoadingStaffNames = true;
     });
 
     try {
-      // Admin kullanıcılarını al ve debug için ekrana yazdır
-      final adminUserRepository = AdminUserRepository();
-      final allAdminUsers = await adminUserRepository.getAllAdminUsers();
-      
-      print('COMPLETED_TASK_CARD: Admin users: ${allAdminUsers.map((u) => '${u.id}:${u.name}').join(', ')}');
-      
       final names = await _getStaffNamesFromAdmin(widget.task.completedByStaffIds);
-      print('COMPLETED_TASK_CARD: Alınan isimler: $names');
       if (mounted) {
         setState(() {
-          _staffNames = '${names} | Admin: ${allAdminUsers.map((u) => '${u.id}:${u.name}').join(', ')}';
+          _staffNames = names;
           _isLoadingStaffNames = false;
         });
-        print('COMPLETED_TASK_CARD: State güncellendi: $_staffNames');
       }
     } catch (e) {
-      print('COMPLETED_TASK_CARD: Hata: $e');
       if (mounted) {
         setState(() {
           _staffNames = 'Bilinmeyen Personel';
@@ -205,19 +189,102 @@ class _CompletedTaskCardState extends State<CompletedTaskCard> {
                                 'Tamamlayan: $_staffNames',
                                 style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                               ),
-                              const SizedBox(height: 4),
-                              Text(
-                                'DEBUG: ${widget.task.completedByStaffIds}',
-                                style: TextStyle(fontSize: 10, color: Colors.red[600]),
-                              ),
-                              Text(
-                                'DEBUG: _staffNames: $_staffNames',
-                                style: TextStyle(fontSize: 10, color: Colors.blue[600]),
-                              ),
                             ],
                           ),
                   ),
                 ],
+              ),
+            ],
+            // Şikayetler bölümü
+            if (widget.task.complaints.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.red.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.red.shade200),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.report_problem, size: 16, color: Colors.red.shade600),
+                        const SizedBox(width: 4),
+                        Text(
+                          'Şikayetler (${widget.task.complaints.length})',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.red.shade600,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    ...widget.task.complaints.map((complaint) => Container(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: Colors.red.shade100),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(Icons.person, size: 14, color: Colors.grey[600]),
+                              const SizedBox(width: 4),
+                              Text(
+                                complaint.isAnonymous ? 'Anonim' : (complaint.reporterName ?? 'Bilinmeyen'),
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w500,
+                                  color: Colors.grey[600],
+                                ),
+                              ),
+                              const Spacer(),
+                              Text(
+                                _formatDateTime(complaint.createdAt),
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: Colors.grey[500],
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            complaint.complaintText,
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                          if (complaint.complaintImageUrl != null) ...[
+                            const SizedBox(height: 8),
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(4),
+                              child: Image.network(
+                                complaint.complaintImageUrl!,
+                                height: 100,
+                                width: double.infinity,
+                                fit: BoxFit.cover,
+                                errorBuilder: (context, error, stackTrace) {
+                                  return Container(
+                                    height: 100,
+                                    color: Colors.grey[200],
+                                    child: const Icon(Icons.image_not_supported),
+                                  );
+                                },
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    )).toList(),
+                  ],
+                ),
               ),
             ],
             if (widget.task.completedImageUrl != null) ...[
@@ -291,6 +358,34 @@ class _CompletedTaskCardState extends State<CompletedTaskCard> {
                 ),
               ),
             ],
+            // Şikayet et butonu
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: () async {
+                  final result = await showDialog<bool>(
+                    context: context,
+                    builder: (context) => TaskComplaintDialog(task: widget.task),
+                  );
+                  
+                  if (result == true && mounted) {
+                    // Şikayet eklendiyse kartı yenile
+                    setState(() {});
+                  }
+                },
+                icon: const Icon(Icons.report_problem, size: 18),
+                label: const Text('Şikayet Et'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red.shade600,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+              ),
+            ),
           ],
         ),
       ),
@@ -305,63 +400,43 @@ class _CompletedTaskCardState extends State<CompletedTaskCard> {
   // Admin kullanıcılarından personel isimlerini al
   Future<String> _getStaffNamesFromAdmin(List<String> staffIds) async {
     try {
-      print('COMPLETED_TASK_CARD: _getStaffNamesFromAdmin başladı');
-      print('COMPLETED_TASK_CARD: Aranan staffIds: $staffIds');
-      print('COMPLETED_TASK_CARD: staffIds length: ${staffIds.length}');
-      
       final adminUserRepository = AdminUserRepository();
       final allAdminUsers = await adminUserRepository.getAllAdminUsers();
       
-      print('COMPLETED_TASK_CARD: Tüm admin kullanıcıları sayısı: ${allAdminUsers.length}');
-      print('COMPLETED_TASK_CARD: Tüm admin kullanıcıları: ${allAdminUsers.map((u) => '${u.id}: ${u.name}').toList()}');
-      
       // Eğer staffIds boşsa, boş string döndür
       if (staffIds.isEmpty) {
-        print('COMPLETED_TASK_CARD: staffIds boş, personel bilgisi yok döndürülüyor');
         return 'Personel bilgisi yok';
       }
       
       final staffNames = <String>[];
       
-      for (int i = 0; i < staffIds.length; i++) {
-        final staffId = staffIds[i];
-        print('COMPLETED_TASK_CARD: ${i + 1}. staffId aranıyor: $staffId');
+      for (final staffId in staffIds) {
         String staffName = 'Bilinmeyen Personel';
         
         // Tüm admin kullanıcıları arasında ara
-        for (int j = 0; j < allAdminUsers.length; j++) {
-          final adminUser = allAdminUsers[j];
-          print('COMPLETED_TASK_CARD: ${j + 1}. admin user kontrol ediliyor: ${adminUser.id} - ${adminUser.name}');
-          
+        for (final adminUser in allAdminUsers) {
           // ID ile eşleştir
           if (adminUser.id == staffId) {
             staffName = adminUser.name;
-            print('COMPLETED_TASK_CARD: ID ile bulunan kullanıcı: ${adminUser.name} (${adminUser.id})');
             break;
           }
           // Email ile eşleştir
           if (adminUser.email == staffId) {
             staffName = adminUser.name;
-            print('COMPLETED_TASK_CARD: Email ile bulunan kullanıcı: ${adminUser.name} (${adminUser.id})');
             break;
           }
           // Name ile eşleştir
           if (adminUser.name == staffId) {
             staffName = adminUser.name;
-            print('COMPLETED_TASK_CARD: Name ile bulunan kullanıcı: ${adminUser.name} (${adminUser.id})');
             break;
           }
         }
         
-        print('COMPLETED_TASK_CARD: ${i + 1}. staffId için bulunan isim: $staffName');
         staffNames.add(staffName);
       }
       
-      final result = staffNames.join(', ');
-      print('COMPLETED_TASK_CARD: Final sonuç: $result');
-      return result;
+      return staffNames.join(', ');
     } catch (e) {
-      print('COMPLETED_TASK_CARD: Personel isimleri alınırken hata: $e');
       return 'Personel bilgisi alınamadı';
     }
   }

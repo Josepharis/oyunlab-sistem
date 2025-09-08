@@ -49,6 +49,9 @@ class _SalesScreenState extends State<SalesScreen> {
   bool _isLoading = true;
   Timer? _debounceTimer;
   
+  // Özet kartları görünürlüğü
+  bool _showSummaryCards = false;
+  
   // Services
   final SaleService _saleService = SaleService();
   
@@ -775,43 +778,39 @@ class _SalesScreenState extends State<SalesScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final sortedCustomers = _getSortedCustomers();
     final formatter = DateFormat('d MMM yyyy', 'tr_TR');
 
     return Scaffold(
       backgroundColor: AppTheme.backgroundColor,
+      appBar: AppBar(
+        title: const Text('Müşteriler'),
+        backgroundColor: Colors.white,
+        foregroundColor: AppTheme.primaryColor,
+        elevation: 0,
+        centerTitle: false,
+      ),
       body: SafeArea(
         child: RefreshIndicator(
           onRefresh: _loadCustomers,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-            // Üst bilgi alanı
-            Container(
-              decoration: BoxDecoration(
-                color: Colors.white,
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.05),
-                    blurRadius: 10,
-                    offset: const Offset(0, 2),
+          child: CustomScrollView(
+            slivers: [
+              // Kontrol paneli - Kaydırınca kaybolacak
+              SliverToBoxAdapter(
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.05),
+                        blurRadius: 10,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
                   ),
-                ],
-              ),
-              padding: const EdgeInsets.all(12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Başlık
-                  Text(
-                    'Müşteriler',
-                          style: TextStyle(
-                            fontSize: 24,
-                            fontWeight: FontWeight.bold,
-                            color: AppTheme.primaryColor,
-                          ),
-                  ),
-                  const SizedBox(height: 4),
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
 
                   // Tarih aralığı
                   InkWell(
@@ -917,12 +916,45 @@ class _SalesScreenState extends State<SalesScreen> {
 
                   const SizedBox(height: 16),
 
-                  // Kategoriye göre özet kartları
-                  _buildCategorySummaryCards(),
+                  // Özet bilgileri butonu
+                  Container(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: () {
+                        setState(() {
+                          _showSummaryCards = !_showSummaryCards;
+                        });
+                      },
+                      icon: Icon(
+                        _showSummaryCards ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
+                        size: 20,
+                      ),
+                      label: Text(
+                        _showSummaryCards ? 'Özet Bilgileri Gizle' : 'Özet Bilgileri Göster',
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppTheme.primaryColor,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        elevation: 2,
+                      ),
+                    ),
+                  ),
 
-
-
-                  const SizedBox(height: 16),
+                  // Kategoriye göre özet kartları (gizli/görünür)
+                  if (_showSummaryCards) ...[
+                    const SizedBox(height: 16),
+                    _buildCategorySummaryCards(),
+                    const SizedBox(height: 16),
+                  ] else
+                    const SizedBox(height: 16),
 
                   // Arama alanı
                   Container(
@@ -963,96 +995,87 @@ class _SalesScreenState extends State<SalesScreen> {
                       style: const TextStyle(fontSize: 14),
                     ),
                   ),
-                ],
-              ),
-            ),
-
-            // Liste başlığı
-            Padding(
-              padding: const EdgeInsets.fromLTRB(8, 16, 8, 8),
-              child: Row(
-                children: [
-                  Text(
-                    '${sortedCustomers.length} kayıt bulundu',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
-                      color: AppTheme.secondaryTextColor,
-                    ),
+                    ],
                   ),
-                  const Spacer(),
-                  // Sıralama dropdown
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 2,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.grey.shade300),
-                    ),
-                    child: DropdownButtonHideUnderline(
-                      child: DropdownButton<String>(
-                        value: _sortBy,
-                        icon: Icon(
-                          _sortAscending
-                              ? Icons.arrow_upward
-                              : Icons.arrow_downward,
-                          size: 16,
-                          color: Colors.grey.shade600,
-                        ),
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: Colors.grey.shade800,
-                        ),
-                        onChanged: (String? newValue) {
-                          if (newValue != null) {
-                            setState(() {
-                              if (_sortBy == newValue) {
-                                _sortAscending = !_sortAscending;
-                              } else {
-                                _sortBy = newValue;
-                                _sortAscending = false;
-                              }
-                            });
-                          }
-                        },
-                        items: [
-                          DropdownMenuItem(
-                            value: 'giriş_tarihi',
-                            child: Text('Giriş Tarihi'),
-                          ),
-                          DropdownMenuItem(
-                            value: 'çıkış_tarihi',
-                            child: Text('Çıkış Tarihi'),
-                          ),
-                          DropdownMenuItem(value: 'süre', child: Text('Süre')),
-                          DropdownMenuItem(
-                            value: 'bilet_no',
-                            child: Text('Bilet No'),
-                          ),
-                          DropdownMenuItem(
-                            value: 'kalan_süre',
-                            child: Text('Satın Alınan Süre'),
-                          ),
-                        ],
+                ),
+              ),
+              
+              // Müşteri listesi
+              _isLoading
+                  ? SliverToBoxAdapter(
+                      child: Container(
+                        height: 200,
+                        child: const Center(child: CircularProgressIndicator()),
                       ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
+                    )
+                  : _buildSliverDataList(),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
-            // Listeleme
-            Expanded(
-              child: _isLoading
-                  ? _buildLoadingState()
-                  : _buildDataList(),
+  // Sliver veri listesini oluştur
+  Widget _buildSliverDataList() {
+    final sortedCustomers = _getSortedCustomers();
+    final filteredSales = _getFilteredSales();
+    
+    // Oyun alanı için müşteri verilerini göster
+    if (_selectedCategory == 'oyun_alani') {
+      if (sortedCustomers.isEmpty) {
+        return SliverToBoxAdapter(
+          child: _buildEmptyState(),
+        );
+      }
+      
+      return SliverList(
+        delegate: SliverChildBuilderDelegate(
+          (context, index) {
+            final customer = sortedCustomers[index];
+            return Card(
+              margin: const EdgeInsets.only(bottom: 8, left: 4, right: 4),
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+                side: BorderSide(color: Colors.grey.shade200),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: _buildOyunAlaniCard(customer),
+              ),
+            );
+          },
+          childCount: sortedCustomers.length,
+        ),
+      );
+    }
+    
+    // Diğer kategoriler için satış verilerini göster
+    if (filteredSales.isEmpty) {
+      return SliverToBoxAdapter(
+        child: _buildEmptyState(),
+      );
+    }
+    
+    return SliverList(
+      delegate: SliverChildBuilderDelegate(
+        (context, index) {
+          final sale = filteredSales[index];
+          return Card(
+            margin: const EdgeInsets.only(bottom: 8, left: 4, right: 4),
+            elevation: 0,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+              side: BorderSide(color: Colors.grey.shade200),
             ),
-          ],
-        ),
-        ),
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: _buildSaleCard(sale),
+            ),
+          );
+        },
+        childCount: filteredSales.length,
       ),
     );
   }

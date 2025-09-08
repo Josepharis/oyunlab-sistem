@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart' hide Order;
-import 'package:uuid/uuid.dart';
 import '../models/order_model.dart';
 import '../models/table_order_model.dart';
 
@@ -73,6 +72,7 @@ class TableOrderRepository {
       return TableOrder(
         tableNumber: json['tableNumber'],
         customerName: json['customerName'],
+        childName: json['childName'] ?? '',
         ticketNumber: json['ticketNumber'] ?? 0,
         childCount: json['childCount'] ?? 1,
         isManual: json['isManual'] ?? false,
@@ -90,6 +90,7 @@ class TableOrderRepository {
       return TableOrder(
         tableNumber: 0,
         customerName: 'Hatalı Masa',
+        childName: 'Hatalı Çocuk',
         ticketNumber: 0,
         childCount: 0,
         isManual: false,
@@ -114,6 +115,7 @@ class TableOrderRepository {
     return {
       'tableNumber': table.tableNumber,
       'customerName': table.customerName,
+      'childName': table.childName,
       'ticketNumber': table.ticketNumber,
       'childCount': table.childCount,
       'isManual': table.isManual,

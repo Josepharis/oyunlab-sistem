@@ -1,10 +1,10 @@
-import 'package:uuid/uuid.dart';
 import 'order_model.dart';
 
 /// Masa Sipariş Modeli
 class TableOrder {
   final int tableNumber;
   final String customerName;
+  final String childName;
   final int ticketNumber;
   final int childCount;
   final bool isManual;
@@ -15,6 +15,7 @@ class TableOrder {
   TableOrder({
     required this.tableNumber,
     required this.customerName,
+    required this.childName,
     required this.ticketNumber,
     required this.childCount,
     required this.isManual,
@@ -71,6 +72,7 @@ class TableOrder {
   TableOrder copyWith({
     int? tableNumber,
     String? customerName,
+    String? childName,
     int? ticketNumber,
     int? childCount,
     bool? isManual,
@@ -81,6 +83,7 @@ class TableOrder {
     return TableOrder(
       tableNumber: tableNumber ?? this.tableNumber,
       customerName: customerName ?? this.customerName,
+      childName: childName ?? this.childName,
       ticketNumber: ticketNumber ?? this.ticketNumber,
       childCount: childCount ?? this.childCount,
       isManual: isManual ?? this.isManual,
