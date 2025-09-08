@@ -10,6 +10,7 @@ import 'core/theme/app_theme.dart';
 import 'core/di/service_locator.dart';
 import 'data/repositories/customer_repository.dart';
 import 'data/repositories/menu_repository.dart';
+import 'data/repositories/task_repository.dart';
 import 'data/services/admin_auth_service.dart';
 import 'data/repositories/admin_user_repository.dart';
 import 'data/repositories/business_settings_repository.dart';
@@ -193,6 +194,7 @@ class MainScreen extends StatefulWidget {
 class _MainScreenState extends State<MainScreen> {
   int _selectedIndex = 0;
   late final CustomerRepository _customerRepository;
+  late final TaskRepository _taskRepository;
   int? _tableNumber; // Filtrelenecek masa numarası
 
   final List<Widget> _screens = [];
@@ -200,8 +202,13 @@ class _MainScreenState extends State<MainScreen> {
   @override
   void initState() {
     super.initState();
-    // GetIt üzerinden CustomerRepository'yi al
+    // GetIt üzerinden Repository'leri al
     _customerRepository = ServiceLocator.locator<CustomerRepository>();
+    _taskRepository = ServiceLocator.locator<TaskRepository>();
+    
+    // Günlük görev sıfırlama timer'ını başlat
+    _taskRepository.startDailyResetTimer();
+    
     _initializeScreens();
   }
 
@@ -298,7 +305,8 @@ class _MainScreenState extends State<MainScreen> {
 
   @override
   void dispose() {
-    // Repository manuel olarak dispose etmeye gerek yok, artık ServiceLocator'da yönetiliyor
+    // TaskRepository timer'ını durdur
+    _taskRepository.dispose();
     super.dispose();
   }
 

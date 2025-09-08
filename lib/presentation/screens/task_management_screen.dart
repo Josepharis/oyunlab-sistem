@@ -61,8 +61,8 @@ class _TaskManagementScreenState extends State<TaskManagementScreen>
     });
 
     try {
-      // Önce tüm görevleri kontrol et ve sıfırla
-      await _taskRepository.checkAndResetAllTasks();
+      // NOT: checkAndResetAllTasks() artık sadece gece yarısında otomatik çalışıyor
+      // Manuel sıfırlama için: await _taskRepository.checkAndResetAllTasks();
       
       // Gerçek verileri TaskRepository'den al
       final pendingTasks = await _taskRepository.getPendingTasks();

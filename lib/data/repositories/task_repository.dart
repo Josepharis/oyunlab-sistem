@@ -1,5 +1,7 @@
 import 'package:uuid/uuid.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:io';
+import 'dart:async';
 import '../models/task_model.dart';
 import '../models/task_score_model.dart';
 import '../services/firebase_service.dart';
@@ -8,6 +10,7 @@ class TaskRepository {
   final FirebaseService _firebaseService;
   final Uuid _uuid = Uuid();
   bool _isOfflineMode = false;
+  Timer? _dailyResetTimer;
 
   TaskRepository(this._firebaseService);
 
@@ -413,10 +416,14 @@ class TaskRepository {
   /// Son sıfırlama tarihini al
   Future<DateTime?> _getLastResetDate() async {
     try {
-      // Bu bilgiyi SharedPreferences veya Firebase'de saklayabiliriz
-      // Şimdilik basit bir implementasyon yapalım
-      return null; // Her zaman sıfırla
+      final prefs = await SharedPreferences.getInstance();
+      final lastResetString = prefs.getString('last_task_reset_date');
+      if (lastResetString != null) {
+        return DateTime.parse(lastResetString);
+      }
+      return null;
     } catch (e) {
+      print('TASK_REPO: Son sıfırlama tarihi alınırken hata: $e');
       return null;
     }
   }
@@ -424,10 +431,53 @@ class TaskRepository {
   /// Son sıfırlama tarihini kaydet
   Future<void> _setLastResetDate(DateTime date) async {
     try {
-      // Bu bilgiyi SharedPreferences veya Firebase'de saklayabiliriz
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('last_task_reset_date', date.toIso8601String());
       print('TASK_REPO: Son sıfırlama tarihi kaydedildi: $date');
     } catch (e) {
       print('TASK_REPO: Son sıfırlama tarihi kaydedilirken hata: $e');
     }
+  }
+
+  /// Günlük sıfırlama timer'ını başlat
+  void startDailyResetTimer() {
+    // Önce mevcut timer'ı iptal et
+    _dailyResetTimer?.cancel();
+    
+    // Gece yarısına kadar olan süreyi hesapla
+    final now = DateTime.now();
+    final tomorrow = DateTime(now.year, now.month, now.day + 1);
+    final durationUntilMidnight = tomorrow.difference(now);
+    
+    print('TASK_REPO: Günlük sıfırlama timer başlatıldı. Gece yarısına kadar: ${durationUntilMidnight.inHours} saat ${durationUntilMidnight.inMinutes % 60} dakika');
+    
+    // DEBUG: Test için 30 saniye sonra sıfırlama (gerçek kullanımda kaldırılacak)
+    // _dailyResetTimer = Timer(const Duration(seconds: 30), () async {
+    //   print('TASK_REPO: TEST - Görevler sıfırlanıyor...');
+    //   await resetAllTasks();
+    //   await _setLastResetDate(DateTime.now());
+    // });
+    
+    // Gece yarısında sıfırlama yap
+    _dailyResetTimer = Timer(durationUntilMidnight, () async {
+      print('TASK_REPO: Gece yarısı - Görevler otomatik sıfırlanıyor...');
+      await resetAllTasks();
+      await _setLastResetDate(DateTime.now());
+      
+      // Ertesi gün için timer'ı yeniden başlat
+      startDailyResetTimer();
+    });
+  }
+
+  /// Günlük sıfırlama timer'ını durdur
+  void stopDailyResetTimer() {
+    _dailyResetTimer?.cancel();
+    _dailyResetTimer = null;
+    print('TASK_REPO: Günlük sıfırlama timer durduruldu');
+  }
+
+  /// Repository'yi temizle
+  void dispose() {
+    stopDailyResetTimer();
   }
 }
