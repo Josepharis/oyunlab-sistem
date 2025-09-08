@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import '../../core/theme/app_theme.dart';
 import '../../data/models/customer_model.dart';
@@ -1157,19 +1158,25 @@ class _SalesScreenState extends State<SalesScreen> {
                                     children: [
                                       // Bilet numarası
                                       Container(
-                                        width: 40,
-                                        height: 40,
-                                        decoration: BoxDecoration(
-                color: AppTheme.primaryColor.withOpacity(0.1),
-                                          shape: BoxShape.circle,
-                                        ),
-                                        child: Center(
-                                          child: Text(
-                                            customer.ticketNumber.toString(),
-                                            style: TextStyle(
-                                              fontSize: 16,
-                                              fontWeight: FontWeight.bold,
-                                              color: AppTheme.primaryColor,
+                                        child: Container(
+                                          width: 40,
+                                          height: 40,
+                                          decoration: BoxDecoration(
+                                            color: AppTheme.primaryColor.withOpacity(0.1),
+                                            shape: BoxShape.circle,
+                                            border: Border.all(
+                                              color: AppTheme.primaryColor.withOpacity(0.3),
+                                              width: 1,
+                                            ),
+                                          ),
+                                          child: Center(
+                                            child: Text(
+                                              customer.ticketNumber.toString(),
+                                              style: TextStyle(
+                                                fontSize: 16,
+                                                fontWeight: FontWeight.bold,
+                                                color: AppTheme.primaryColor,
+                                              ),
                                             ),
                                           ),
                                         ),
@@ -1201,6 +1208,41 @@ class _SalesScreenState extends State<SalesScreen> {
                                               ),
                                               maxLines: 1,
                                               overflow: TextOverflow.ellipsis,
+                                            ),
+                                            const SizedBox(height: 2),
+                                            GestureDetector(
+                                              onTap: () {
+                                                Clipboard.setData(ClipboardData(text: customer.phoneNumber));
+                                                ScaffoldMessenger.of(context).showSnackBar(
+                                                  SnackBar(
+                                                    content: Text('Telefon numarası kopyalandı: ${customer.phoneNumber}'),
+                                                    backgroundColor: AppTheme.primaryColor,
+                                                    behavior: SnackBarBehavior.floating,
+                                                    duration: const Duration(seconds: 2),
+                                                  ),
+                                                );
+                                              },
+                                              child: Container(
+                                                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                                                decoration: BoxDecoration(
+                                                  color: AppTheme.primaryColor.withOpacity(0.1),
+                                                  borderRadius: BorderRadius.circular(4),
+                                                  border: Border.all(
+                                                    color: AppTheme.primaryColor.withOpacity(0.3),
+                                                    width: 1,
+                                                  ),
+                                                ),
+                                                child: Text(
+                                                  'Tel: ${customer.phoneNumber}',
+                                                  style: TextStyle(
+                                                    fontSize: 12,
+                                                    color: AppTheme.primaryColor,
+                                                    fontWeight: FontWeight.w500,
+                                                  ),
+                                                  maxLines: 1,
+                                                  overflow: TextOverflow.ellipsis,
+                                                ),
+                                              ),
                                             ),
                                           ],
                                         ),
@@ -1512,6 +1554,41 @@ class _SalesScreenState extends State<SalesScreen> {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
+                  const SizedBox(height: 2),
+                  GestureDetector(
+                    onTap: () {
+                      Clipboard.setData(ClipboardData(text: customer.phoneNumber));
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Telefon numarası kopyalandı: ${customer.phoneNumber}'),
+                          backgroundColor: Colors.orange.shade600,
+                          behavior: SnackBarBehavior.floating,
+                          duration: const Duration(seconds: 2),
+                        ),
+                      );
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.orange.shade100,
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(
+                          color: Colors.orange.shade300,
+                          width: 1,
+                        ),
+                      ),
+                      child: Text(
+                        'Tel: ${customer.phoneNumber}',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.orange.shade700,
+                          fontWeight: FontWeight.w500,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ),
                                 ],
                               ),
                             ),
@@ -1674,10 +1751,45 @@ class _SalesScreenState extends State<SalesScreen> {
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 2),
+                  GestureDetector(
+                    onTap: () {
+                      Clipboard.setData(ClipboardData(text: customer.phoneNumber));
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Telefon numarası kopyalandı: ${customer.phoneNumber}'),
+                          backgroundColor: Colors.purple.shade600,
+                          behavior: SnackBarBehavior.floating,
+                          duration: const Duration(seconds: 2),
+                        ),
+                      );
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.purple.shade100,
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(
+                          color: Colors.purple.shade300,
+                          width: 1,
+                        ),
+                      ),
+                      child: Text(
+                        'Tel: ${customer.phoneNumber}',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.purple.shade700,
+                          fontWeight: FontWeight.w500,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ],
-        ),
-        ),
 
             // Durum bilgisi
             Container(
@@ -1834,6 +1946,41 @@ class _SalesScreenState extends State<SalesScreen> {
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 2),
+                  GestureDetector(
+                    onTap: () {
+                      Clipboard.setData(ClipboardData(text: customer.phoneNumber));
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Telefon numarası kopyalandı: ${customer.phoneNumber}'),
+                          backgroundColor: Colors.blue.shade600,
+                          behavior: SnackBarBehavior.floating,
+                          duration: const Duration(seconds: 2),
+                        ),
+                      );
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.blue.shade100,
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(
+                          color: Colors.blue.shade300,
+                          width: 1,
+                        ),
+                      ),
+                      child: Text(
+                        'Tel: ${customer.phoneNumber}',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.blue.shade700,
+                          fontWeight: FontWeight.w500,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
                   ),
                 ],
               ),
@@ -1997,6 +2144,41 @@ class _SalesScreenState extends State<SalesScreen> {
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 2),
+                  GestureDetector(
+                    onTap: () {
+                      Clipboard.setData(ClipboardData(text: customer.phoneNumber));
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Telefon numarası kopyalandı: ${customer.phoneNumber}'),
+                          backgroundColor: Colors.green.shade600,
+                          behavior: SnackBarBehavior.floating,
+                          duration: const Duration(seconds: 2),
+                        ),
+                      );
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.green.shade100,
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(
+                          color: Colors.green.shade300,
+                          width: 1,
+                        ),
+                      ),
+                      child: Text(
+                        'Tel: ${customer.phoneNumber}',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.green.shade700,
+                          fontWeight: FontWeight.w500,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
                   ),
                 ],
               ),

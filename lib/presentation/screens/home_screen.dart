@@ -118,55 +118,75 @@ class _HomeScreenState extends State<HomeScreen>
 
   // Masa ekleme dialog'u
   Future<void> _showAddTableDialog() async {
-    // Firebase'den güncel müşteri listesini al
-    List<Customer> customers = [];
-    try {
-      customers = await widget.customerRepository.getActiveCustomers();
-      print('HOME_SCREEN: Masa ekleme dialog\'unda ${customers.length} aktif müşteri bulundu');
-    } catch (e) {
-      print('HOME_SCREEN: Aktif müşteriler alınamadı: $e');
-      // Hata durumunda repository'deki listeyi kullan
-      customers = widget.customerRepository.customers;
-    }
-    
-    // Firebase'den mevcut masaları al
-    List<TableOrder> existingTables = [];
-    try {
-      existingTables = await _tableOrderRepository.getAllTables();
-    } catch (e) {
-      print('Masa bilgileri alınamadı: $e');
-    }
-    
-    // Masası olmayan aktif çocukları bul
-    final customersWithoutTable = customers.where((customer) {
-      // Aktif olan çocuklar - YENİ SİSTEM: currentRemainingSeconds kullan
-      if (customer.currentRemainingSeconds <= 0 || customer.ticketNumber <= 0) {
-        return false;
-      }
-      
-      // Bu bilet numarası için zaten masa var mı kontrol et
-      final hasTable = existingTables.any((table) => 
-        table.ticketNumber == customer.ticketNumber
-      );
-      
-      return !hasTable; // Masası olmayan çocukları döndür
-    }).toList();
-
-    // Debug: Bilet numaralarını log'la
-    print('HOME_SCREEN: Masa ekleme dialog\'unda bulunan müşteriler:');
-    for (final customer in customersWithoutTable) {
-      print('HOME_SCREEN: ${customer.childName} - Bilet: ${customer.ticketNumber}');
-    }
-
-    if (!mounted) return;
-
-    setState(() {
-      // UI'ı güncelle
-    });
-
+    // Loading dialog'u göster
     showDialog(
       context: context,
-      builder: (context) {
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        content: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(color: AppTheme.primaryColor),
+            const SizedBox(width: 16),
+            const Text('Müşteri bilgileri yükleniyor...'),
+          ],
+        ),
+      ),
+    );
+
+    try {
+      // Firebase'den güncel müşteri listesini al
+      List<Customer> customers = [];
+      try {
+        customers = await widget.customerRepository.getActiveCustomers();
+        print('HOME_SCREEN: Masa ekleme dialog\'unda ${customers.length} aktif müşteri bulundu');
+      } catch (e) {
+        print('HOME_SCREEN: Aktif müşteriler alınamadı: $e');
+        // Hata durumunda repository'deki listeyi kullan
+        customers = widget.customerRepository.customers;
+      }
+      
+      // Firebase'den mevcut masaları al
+      List<TableOrder> existingTables = [];
+      try {
+        existingTables = await _tableOrderRepository.getAllTables();
+      } catch (e) {
+        print('Masa bilgileri alınamadı: $e');
+      }
+      
+      // Masası olmayan aktif çocukları bul
+      final customersWithoutTable = customers.where((customer) {
+        // Aktif olan çocuklar - YENİ SİSTEM: currentRemainingSeconds kullan
+        if (customer.currentRemainingSeconds <= 0 || customer.ticketNumber <= 0) {
+          return false;
+        }
+        
+        // Bu bilet numarası için zaten masa var mı kontrol et
+        final hasTable = existingTables.any((table) => 
+          table.ticketNumber == customer.ticketNumber
+        );
+        
+        return !hasTable; // Masası olmayan çocukları döndür
+      }).toList();
+
+      // Debug: Bilet numaralarını log'la
+      print('HOME_SCREEN: Masa ekleme dialog\'unda bulunan müşteriler:');
+      for (final customer in customersWithoutTable) {
+        print('HOME_SCREEN: ${customer.childName} - Bilet: ${customer.ticketNumber}');
+      }
+
+      if (!mounted) return;
+
+      // Loading dialog'u kapat
+      Navigator.of(context).pop();
+
+      setState(() {
+        // UI'ı güncelle
+      });
+
+      showDialog(
+        context: context,
+        builder: (context) {
         return AlertDialog(
           title: Row(
             children: [
@@ -308,6 +328,19 @@ class _HomeScreenState extends State<HomeScreen>
         );
       },
     );
+    } catch (e) {
+      // Loading dialog'u kapat
+      if (mounted) {
+        Navigator.of(context).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Masa ekleme dialog\'u açılırken hata oluştu: $e'),
+            backgroundColor: Colors.red.shade600,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
   }
 
   // Müşteri için masa ekleme

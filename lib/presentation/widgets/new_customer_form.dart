@@ -568,39 +568,45 @@ class _NewCustomerFormState extends State<NewCustomerForm>
     final isSmallScreen = screenHeight < 800;
     final isNarrowScreen = screenWidth < 400;
     
-    return Padding(
-      padding: EdgeInsets.symmetric(
-        horizontal: isNarrowScreen ? screenWidth * 0.02 : screenWidth * 0.03,
-        vertical: isVerySmallScreen ? 2.0 : 4.0,
-      ),
-      child: Form(
-        key: _formKey,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Kişisel Bilgiler Kartı
-            _buildPersonalInfoCard(),
+    return SingleChildScrollView(
+      physics: const BouncingScrollPhysics(),
+      child: Padding(
+        padding: EdgeInsets.symmetric(
+          horizontal: isNarrowScreen ? screenWidth * 0.02 : screenWidth * 0.03,
+          vertical: isVerySmallScreen ? 2.0 : 4.0,
+        ),
+        child: Form(
+          key: _formKey,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Kişisel Bilgiler Kartı
+              _buildPersonalInfoCard(),
 
-            SizedBox(height: isVerySmallScreen ? 4 : (isSmallScreen ? 6 : 8)),
+              SizedBox(height: isVerySmallScreen ? 4 : (isSmallScreen ? 6 : 8)),
 
-            // Süre Seçimi Kartı
-            _buildDurationCard(),
+              // Süre Seçimi Kartı
+              _buildDurationCard(),
 
-            SizedBox(height: isVerySmallScreen ? 4 : (isSmallScreen ? 6 : 8)),
+              SizedBox(height: isVerySmallScreen ? 4 : (isSmallScreen ? 6 : 8)),
 
-            // Ödeme Yöntemi Seçimi
-            if (_selectedDurationPrice != null || (_isUsingRemainingTime && _selectedDuration == 0)) _buildPaymentMethodCard(),
+              // Ödeme Yöntemi Seçimi
+              if (_selectedDurationPrice != null || (_isUsingRemainingTime && _selectedDuration == 0)) _buildPaymentMethodCard(),
 
-            SizedBox(height: isVerySmallScreen ? 4 : (isSmallScreen ? 6 : 8)),
+              SizedBox(height: isVerySmallScreen ? 4 : (isSmallScreen ? 6 : 8)),
 
-            // Ödenecek Tutar Bilgisi
-            if (_selectedDurationPrice != null || (_isUsingRemainingTime && _selectedDuration == 0)) _buildPaymentInfoCard(),
+              // Ödenecek Tutar Bilgisi
+              if (_selectedDurationPrice != null || (_isUsingRemainingTime && _selectedDuration == 0)) _buildPaymentInfoCard(),
 
-            SizedBox(height: isVerySmallScreen ? 4 : (isSmallScreen ? 6 : 8)),
+              SizedBox(height: isVerySmallScreen ? 4 : (isSmallScreen ? 6 : 8)),
 
-            // Kaydet Butonu
-            _buildSaveButton(),
-          ],
+              // Kaydet Butonu
+              _buildSaveButton(),
+              
+              // Alt boşluk - klavye açıldığında taşma olmaması için
+              SizedBox(height: MediaQuery.of(context).viewInsets.bottom + 20),
+            ],
+          ),
         ),
       ),
     );
@@ -1032,7 +1038,7 @@ class _NewCustomerFormState extends State<NewCustomerForm>
                 ),
               ],
             ),
-            SizedBox(height: isVerySmallScreen ? 2 : (isSmallScreen ? 3 : 16)),
+            SizedBox(height: isVerySmallScreen ? 2 : (isSmallScreen ? 3 : 12)),
 
             // Form Alanları
             _buildInputField(
@@ -1046,7 +1052,7 @@ class _NewCustomerFormState extends State<NewCustomerForm>
                 return null;
               },
             ),
-            SizedBox(height: isVerySmallScreen ? 4 : (isSmallScreen ? 6 : 8)),
+            SizedBox(height: isVerySmallScreen ? 3 : (isSmallScreen ? 4 : 6)),
 
             _buildInputField(
               controller: _parentNameController,
@@ -1059,7 +1065,7 @@ class _NewCustomerFormState extends State<NewCustomerForm>
                 return null;
               },
             ),
-            SizedBox(height: isVerySmallScreen ? 4 : (isSmallScreen ? 6 : 8)),
+            SizedBox(height: isVerySmallScreen ? 3 : (isSmallScreen ? 4 : 6)),
 
             // Telefon ve Arama Butonu
             Row(
@@ -1128,7 +1134,7 @@ class _NewCustomerFormState extends State<NewCustomerForm>
               ],
             ),
 
-            SizedBox(height: isVerySmallScreen ? 4 : (isSmallScreen ? 6 : 8)),
+            SizedBox(height: isVerySmallScreen ? 3 : (isSmallScreen ? 4 : 6)),
 
             // Çocuk Sayısı ve Kardeş Girişi
             Row(
@@ -1148,10 +1154,10 @@ class _NewCustomerFormState extends State<NewCustomerForm>
             // Müşteri durumu bildirimi
             if (!_isPhoneFound && _phoneController.text.isNotEmpty)
               Container(
-                margin: EdgeInsets.only(top: isVerySmallScreen ? 4 : (isSmallScreen ? 6 : 8)),
+                margin: EdgeInsets.only(top: isVerySmallScreen ? 3 : (isSmallScreen ? 4 : 6)),
                 padding: EdgeInsets.symmetric(
-                  horizontal: isVerySmallScreen ? 8 : (isSmallScreen ? 10 : 12), 
-                  vertical: isVerySmallScreen ? 4 : (isSmallScreen ? 6 : 8)
+                  horizontal: isVerySmallScreen ? 6 : (isSmallScreen ? 8 : 10), 
+                  vertical: isVerySmallScreen ? 3 : (isSmallScreen ? 4 : 6)
                 ),
                 decoration: BoxDecoration(
                   color: Colors.orange.shade50,
@@ -1182,10 +1188,10 @@ class _NewCustomerFormState extends State<NewCustomerForm>
             // Kalan süre bilgisi gösterimi
             if (_isPhoneFound && _foundCustomer != null)
               Container(
-                margin: EdgeInsets.only(top: isVerySmallScreen ? 4 : (isSmallScreen ? 6 : 8)),
+                margin: EdgeInsets.only(top: isVerySmallScreen ? 3 : (isSmallScreen ? 4 : 6)),
                 padding: EdgeInsets.symmetric(
-                  horizontal: isVerySmallScreen ? 6 : (isSmallScreen ? 8 : 10), 
-                  vertical: isVerySmallScreen ? 4 : (isSmallScreen ? 6 : 8)
+                  horizontal: isVerySmallScreen ? 5 : (isSmallScreen ? 6 : 8), 
+                  vertical: isVerySmallScreen ? 3 : (isSmallScreen ? 4 : 6)
                 ),
                 decoration: BoxDecoration(
                   color: _foundCustomer!.remainingTime.inSeconds > 0
@@ -1381,7 +1387,7 @@ class _NewCustomerFormState extends State<NewCustomerForm>
       color: Colors.white,
       surfaceTintColor: Colors.white,
       child: Padding(
-        padding: EdgeInsets.all(isVerySmallScreen ? 4 : (isSmallScreen ? 6 : 8)),
+        padding: EdgeInsets.all(isVerySmallScreen ? 3 : (isSmallScreen ? 4 : 6)),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -1744,7 +1750,7 @@ class _NewCustomerFormState extends State<NewCustomerForm>
               ],
             ),
 
-            SizedBox(height: isVerySmallScreen ? 4 : (isSmallScreen ? 6 : 8)),
+            SizedBox(height: isVerySmallScreen ? 3 : (isSmallScreen ? 4 : 6)),
 
             // İşletme Ayarlarından Gelen Süre Seçenekleri
             if (_availableDurations.isNotEmpty) ...[
@@ -1890,7 +1896,7 @@ class _NewCustomerFormState extends State<NewCustomerForm>
       color: Colors.white,
       surfaceTintColor: Colors.white,
       child: Padding(
-        padding: EdgeInsets.all(isVerySmallScreen ? 4 : (isSmallScreen ? 6 : 8)),
+        padding: EdgeInsets.all(isVerySmallScreen ? 3 : (isSmallScreen ? 4 : 6)),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -1919,7 +1925,7 @@ class _NewCustomerFormState extends State<NewCustomerForm>
                 ),
               ],
             ),
-            SizedBox(height: isVerySmallScreen ? 4 : (isSmallScreen ? 6 : 8)),
+            SizedBox(height: isVerySmallScreen ? 3 : (isSmallScreen ? 4 : 6)),
             
             // Ödeme seçenekleri
             Row(
@@ -2022,7 +2028,7 @@ class _NewCustomerFormState extends State<NewCustomerForm>
       color: isFree ? Colors.blue.shade50 : Colors.green.shade50,
       surfaceTintColor: isFree ? Colors.blue.shade50 : Colors.green.shade50,
       child: Padding(
-        padding: EdgeInsets.all(isVerySmallScreen ? 4 : (isSmallScreen ? 6 : 8)),
+        padding: EdgeInsets.all(isVerySmallScreen ? 3 : (isSmallScreen ? 4 : 6)),
         child: Row(
           children: [
             Container(
@@ -2108,7 +2114,7 @@ class _NewCustomerFormState extends State<NewCustomerForm>
     
     return SizedBox(
       width: double.infinity,
-      height: isVerySmallScreen ? 40 : (isSmallScreen ? 44 : 48),
+      height: isVerySmallScreen ? 36 : (isSmallScreen ? 40 : 44),
       child: ElevatedButton.icon(
         onPressed: _isLoading ? null : _save,
         icon: _isLoading
@@ -2185,8 +2191,8 @@ class _NewCustomerFormState extends State<NewCustomerForm>
           borderSide: BorderSide(color: Colors.red.shade400),
         ),
         contentPadding: EdgeInsets.symmetric(
-          horizontal: isVerySmallScreen ? 12 : (isSmallScreen ? 14 : 16),
-          vertical: isVerySmallScreen ? 8 : (isSmallScreen ? 10 : 12),
+          horizontal: isVerySmallScreen ? 10 : (isSmallScreen ? 12 : 14),
+          vertical: isVerySmallScreen ? 6 : (isSmallScreen ? 8 : 10),
         ),
       ),
       style: TextStyle(fontSize: isVerySmallScreen ? 12 : (isSmallScreen ? 14 : 16)),
@@ -2407,7 +2413,7 @@ class _NewCustomerFormState extends State<NewCustomerForm>
         ),
         SizedBox(height: 2),
         Container(
-          height: isVerySmallScreen ? 24 : (isSmallScreen ? 28 : 32),
+          height: isVerySmallScreen ? 22 : (isSmallScreen ? 26 : 30),
           decoration: BoxDecoration(
             color: Colors.grey.shade50,
             borderRadius: BorderRadius.circular(isVerySmallScreen ? 4 : (isSmallScreen ? 6 : 8)),
@@ -2499,7 +2505,7 @@ class _NewCustomerFormState extends State<NewCustomerForm>
         ),
         SizedBox(height: 2),
         Container(
-          height: isVerySmallScreen ? 24 : (isSmallScreen ? 28 : 32),
+          height: isVerySmallScreen ? 22 : (isSmallScreen ? 26 : 30),
           decoration: BoxDecoration(
             color: isHourlyEntry ? Colors.grey.shade50 : Colors.grey.shade100,
             borderRadius: BorderRadius.circular(isVerySmallScreen ? 4 : (isSmallScreen ? 6 : 8)),
