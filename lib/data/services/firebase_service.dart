@@ -1116,4 +1116,50 @@ class FirebaseService {
       rethrow;
     }
   }
+
+  /// Tamamlanma geçmişini kaydet
+  Future<void> addTaskCompletionHistory(Map<String, dynamic> historyData) async {
+    try {
+      if (_isOfflineMode) {
+        print('FIREBASE_SERVICE: Çevrimdışı modda tamamlanma geçmişi kaydedilemez');
+        return;
+      }
+
+      if (_auth.currentUser == null) {
+        print('Tamamlanma geçmişi kaydetmek için kimlik doğrulaması gerekiyor');
+        return;
+      }
+
+      await _firestore.collection('task_completion_history').add(historyData);
+      print('FIREBASE_SERVICE: Tamamlanma geçmişi başarıyla kaydedildi');
+    } catch (e) {
+      print('FIREBASE_SERVICE: Tamamlanma geçmişi kaydedilirken hata: $e');
+      rethrow;
+    }
+  }
+
+  /// Tamamlanma geçmişini getir
+  Future<List<Map<String, dynamic>>> getTaskCompletionHistory() async {
+    try {
+      if (_isOfflineMode) {
+        print('FIREBASE_SERVICE: Çevrimdışı modda tamamlanma geçmişi alınamadı');
+        return [];
+      }
+
+      if (_auth.currentUser == null) {
+        print('Tamamlanma geçmişi almak için kimlik doğrulaması gerekiyor');
+        return [];
+      }
+
+      final snapshot = await _firestore
+          .collection('task_completion_history')
+          .orderBy('completedAt', descending: true)
+          .get();
+
+      return snapshot.docs.map((doc) => {...doc.data(), 'id': doc.id}).toList();
+    } catch (e) {
+      print('FIREBASE_SERVICE: Tamamlanma geçmişi alınırken hata: $e');
+      return [];
+    }
+  }
 }

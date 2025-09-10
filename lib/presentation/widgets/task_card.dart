@@ -343,6 +343,7 @@ class _TaskCardState extends State<TaskCard> {
         onTaskCompleted: () {
           // Görev tamamlandığında personel isimlerini yeniden yükle
           _loadStaffNames();
+          // CompleteTaskDialog zaten completeTask çağırıyor, burada tekrar çağırmaya gerek yok
           widget.onTaskCompleted();
         },
       ),

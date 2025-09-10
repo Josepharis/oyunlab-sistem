@@ -408,6 +408,12 @@ class _CompletedTaskCardState extends State<CompletedTaskCard> {
         return 'Personel bilgisi yok';
       }
       
+      print('COMPLETED_TASK_CARD: Aranan staffIds: $staffIds');
+      print('COMPLETED_TASK_CARD: Mevcut admin kullanıcıları:');
+      for (final adminUser in allAdminUsers) {
+        print('  - ID: ${adminUser.id}, Name: ${adminUser.name}, Email: ${adminUser.email}');
+      }
+      
       final staffNames = <String>[];
       
       for (final staffId in staffIds) {
@@ -418,25 +424,32 @@ class _CompletedTaskCardState extends State<CompletedTaskCard> {
           // ID ile eşleştir
           if (adminUser.id == staffId) {
             staffName = adminUser.name;
+            print('COMPLETED_TASK_CARD: ID eşleşmesi bulundu: $staffId -> ${adminUser.name}');
             break;
           }
           // Email ile eşleştir
           if (adminUser.email == staffId) {
             staffName = adminUser.name;
+            print('COMPLETED_TASK_CARD: Email eşleşmesi bulundu: $staffId -> ${adminUser.name}');
             break;
           }
           // Name ile eşleştir
           if (adminUser.name == staffId) {
             staffName = adminUser.name;
+            print('COMPLETED_TASK_CARD: Name eşleşmesi bulundu: $staffId -> ${adminUser.name}');
             break;
           }
         }
         
+        print('COMPLETED_TASK_CARD: $staffId için bulunan isim: $staffName');
         staffNames.add(staffName);
       }
       
-      return staffNames.join(', ');
+      final result = staffNames.join(', ');
+      print('COMPLETED_TASK_CARD: Final result: $result');
+      return result;
     } catch (e) {
+      print('COMPLETED_TASK_CARD: Hata: $e');
       return 'Personel bilgisi alınamadı';
     }
   }

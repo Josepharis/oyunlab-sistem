@@ -368,21 +368,6 @@ class _CompleteTaskDialogState extends State<CompleteTaskDialog>
                                 color: Colors.blue[800],
                               ),
                             ),
-                            if (!_isLoadingStaff) ...[
-                              const SizedBox(height: 4),
-                              Text(
-                                'DEBUG: Firebase UID: ${FirebaseAuth.instance.currentUser?.uid ?? "null"}',
-                                style: TextStyle(fontSize: 10, color: Colors.red[600]),
-                              ),
-                              Text(
-                                'DEBUG: Firebase Email: ${FirebaseAuth.instance.currentUser?.email ?? "null"}',
-                                style: TextStyle(fontSize: 10, color: Colors.red[600]),
-                              ),
-                              Text(
-                                'DEBUG: Selected IDs: $_selectedStaffIds',
-                                style: TextStyle(fontSize: 10, color: Colors.blue[600]),
-                              ),
-                            ],
                           ],
                         ),
                       ],

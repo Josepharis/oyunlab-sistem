@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:async';
 import '../models/task_model.dart';
 import '../models/task_score_model.dart';
+import '../models/task_completion_history_model.dart';
 import '../services/firebase_service.dart';
 
 class TaskRepository {
@@ -153,6 +154,9 @@ class TaskRepository {
         print('TASK_REPO: UpdatedTask completedByStaffIds: ${updatedTask.completedByStaffIds}');
 
         await updateTask(updatedTask);
+        
+        // Tamamlanma geçmişini kaydet
+        await _saveTaskCompletionHistory(updatedTask);
         
         // Görev puanlarını hesapla ve kaydet
         await _calculateAndSaveTaskScores(updatedTask);
@@ -374,9 +378,8 @@ class TaskRepository {
         if (shouldReset) {
           final resetTask = task.copyWith(
             status: TaskStatus.pending,
-            completedAt: null,
-            completedByStaffIds: [],
-            completedImageUrl: null,
+            // Tamamlanma bilgilerini silmiyoruz, sadece durumu değiştiriyoruz
+            // Geçmiş kayıtları task_completion_history'de saklanıyor
           );
           
           await updateTask(resetTask);
@@ -474,6 +477,64 @@ class TaskRepository {
     _dailyResetTimer?.cancel();
     _dailyResetTimer = null;
     print('TASK_REPO: Günlük sıfırlama timer durduruldu');
+  }
+
+  /// Tamamlanma geçmişini kaydet
+  Future<void> _saveTaskCompletionHistory(Task task) async {
+    try {
+      if (_isOfflineMode) {
+        print('TASK_REPO: Çevrimdışı modda tamamlanma geçmişi kaydedilemez');
+        return;
+      }
+
+      final history = TaskCompletionHistory(
+        id: _uuid.v4(),
+        taskId: task.id,
+        taskTitle: task.title,
+        taskDescription: task.description,
+        completedAt: task.completedAt!,
+        completedByStaffIds: task.completedByStaffIds,
+        completedImageUrl: task.completedImageUrl,
+        createdAt: DateTime.now(),
+      );
+
+      await _firebaseService.addTaskCompletionHistory(history.toJson());
+      print('TASK_REPO: Tamamlanma geçmişi kaydedildi: ${task.title}');
+    } catch (e) {
+      print('TASK_REPO: Tamamlanma geçmişi kaydedilirken hata: $e');
+    }
+  }
+
+  /// Tamamlanma geçmişini getir
+  Future<List<TaskCompletionHistory>> getTaskCompletionHistory() async {
+    try {
+      if (_isOfflineMode) {
+        return [];
+      }
+
+      final historyData = await _firebaseService.getTaskCompletionHistory();
+      return historyData.map((data) => TaskCompletionHistory.fromJson(data)).toList();
+    } catch (e) {
+      print('TASK_REPO: Tamamlanma geçmişi alınırken hata: $e');
+      return [];
+    }
+  }
+
+  /// Belirli tarihteki tamamlanma geçmişini getir
+  Future<List<TaskCompletionHistory>> getTaskCompletionHistoryForDate(DateTime date) async {
+    try {
+      final allHistory = await getTaskCompletionHistory();
+      
+      return allHistory.where((history) {
+        final historyDate = history.completedAt;
+        return historyDate.year == date.year &&
+               historyDate.month == date.month &&
+               historyDate.day == date.day;
+      }).toList();
+    } catch (e) {
+      print('TASK_REPO: Tarihli tamamlanma geçmişi alınırken hata: $e');
+      return [];
+    }
   }
 
   /// Repository'yi temizle

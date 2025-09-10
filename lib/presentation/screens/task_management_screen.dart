@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../data/models/task_model.dart';
+import '../../data/models/task_completion_history_model.dart';
 import '../../data/repositories/task_repository.dart';
 import '../../core/di/service_locator.dart';
 import '../widgets/task_card.dart';
-import '../widgets/completed_task_card.dart';
+import '../widgets/completed_task_history_card.dart';
 import '../widgets/create_task_dialog.dart';
 
 class TaskManagementScreen extends StatefulWidget {
@@ -19,7 +20,7 @@ class _TaskManagementScreenState extends State<TaskManagementScreen>
   late TabController _tabController;
   late TaskRepository _taskRepository;
   List<Task> _pendingTasks = [];
-  List<Task> _completedTasks = [];
+  List<TaskCompletionHistory> _completedTasksHistory = [];
   bool _isLoading = false;
   ScaffoldMessengerState? _scaffoldMessenger;
   DateTime _selectedDate = DateTime.now();
@@ -52,6 +53,36 @@ class _TaskManagementScreenState extends State<TaskManagementScreen>
     super.dispose();
   }
 
+  // Sadece gün değiştiğinde görevleri sıfırla
+  Future<void> _checkAndResetTasksIfNeeded() async {
+    try {
+      final today = DateTime.now();
+      final prefs = await SharedPreferences.getInstance();
+      final lastResetDateString = prefs.getString('last_task_reset_date');
+      
+      DateTime? lastResetDate;
+      if (lastResetDateString != null) {
+        lastResetDate = DateTime.parse(lastResetDateString);
+      }
+      
+      // Eğer son sıfırlama bugün değilse sıfırla
+      if (lastResetDate == null || 
+          lastResetDate.year != today.year ||
+          lastResetDate.month != today.month ||
+          lastResetDate.day != today.day) {
+        
+        print('TASK_MANAGEMENT: Gün değişti, görevler sıfırlanıyor...');
+        await _taskRepository.resetAllTasks();
+        await prefs.setString('last_task_reset_date', today.toIso8601String());
+        print('TASK_MANAGEMENT: Görevler sıfırlandı');
+      } else {
+        print('TASK_MANAGEMENT: Görevler bugün zaten sıfırlanmış');
+      }
+    } catch (e) {
+      print('TASK_MANAGEMENT: Görev sıfırlama kontrolü sırasında hata: $e');
+    }
+  }
+
   Future<void> _loadTasks() async {
     // Widget mounted değilse işlemi durdur
     if (!mounted) return;
@@ -61,32 +92,21 @@ class _TaskManagementScreenState extends State<TaskManagementScreen>
     });
 
     try {
-      // NOT: checkAndResetAllTasks() artık sadece gece yarısında otomatik çalışıyor
-      // Manuel sıfırlama için: await _taskRepository.checkAndResetAllTasks();
+      // Sadece gün değiştiğinde görevleri sıfırla
+      await _checkAndResetTasksIfNeeded();
       
       // Gerçek verileri TaskRepository'den al
       final pendingTasks = await _taskRepository.getPendingTasks();
-      final allCompletedTasks = await _taskRepository.getCompletedTasks();
-
-      // Tamamlanan görevleri seçilen tarihe göre filtrele
-      final filteredCompletedTasks = allCompletedTasks.where((task) {
-        if (task.completedAt == null) return false;
-        
-        final taskDate = task.completedAt!;
-        final selectedDate = _selectedDate;
-        
-        // Aynı gün kontrolü (sadece tarih, saat değil)
-        return taskDate.year == selectedDate.year &&
-               taskDate.month == selectedDate.month &&
-               taskDate.day == selectedDate.day;
-      }).toList();
+      
+      // Tamamlanan görevleri geçmiş kayıtlarından al
+      final completedTasksHistory = await _taskRepository.getTaskCompletionHistoryForDate(_selectedDate);
 
       // Widget hala mounted mı kontrol et
       if (!mounted) return;
 
       setState(() {
         _pendingTasks = pendingTasks;
-        _completedTasks = filteredCompletedTasks;
+        _completedTasksHistory = completedTasksHistory;
       });
     } catch (e) {
       if (!mounted) return;
@@ -105,64 +125,6 @@ class _TaskManagementScreenState extends State<TaskManagementScreen>
   }
 
 
-  // Bugün tamamlanan görevleri yükle (tarih filtresi olmadan)
-  Future<void> _loadTodayCompletedTasks() async {
-    if (!mounted) return;
-    
-    try {
-      final allCompletedTasks = await _taskRepository.getCompletedTasks();
-      final today = DateTime.now();
-
-      // Bugün tamamlanan görevleri filtrele
-      final todayCompletedTasks = allCompletedTasks.where((task) {
-        if (task.completedAt == null) return false;
-        
-        final taskDate = task.completedAt!;
-        
-        // Aynı gün kontrolü (sadece tarih, saat değil)
-        return taskDate.year == today.year &&
-               taskDate.month == today.month &&
-               taskDate.day == today.day;
-      }).toList();
-
-      if (mounted) {
-        setState(() {
-          _completedTasks = todayCompletedTasks;
-        });
-      }
-    } catch (e) {
-      print('Bugün tamamlanan görevler yüklenirken hata: $e');
-    }
-  }
-
-  // Tamamlanan görevleri seçilen tarihe göre yükle
-  Future<void> _loadCompletedTasksForDate(DateTime date) async {
-    if (!mounted) return;
-    
-    try {
-      final allCompletedTasks = await _taskRepository.getCompletedTasks();
-
-      // Seçilen tarihe göre tamamlanan görevleri filtrele
-      final filteredCompletedTasks = allCompletedTasks.where((task) {
-        if (task.completedAt == null) return false;
-        
-        final taskDate = task.completedAt!;
-        
-        // Aynı gün kontrolü (sadece tarih, saat değil)
-        return taskDate.year == date.year &&
-               taskDate.month == date.month &&
-               taskDate.day == date.day;
-      }).toList();
-
-      if (mounted) {
-        setState(() {
-          _completedTasks = filteredCompletedTasks;
-        });
-      }
-    } catch (e) {
-      print('Seçilen tarih için tamamlanan görevler yüklenirken hata: $e');
-    }
-  }
 
   // Tarih seçici
   Future<void> _selectDate() async {
@@ -178,8 +140,8 @@ class _TaskManagementScreenState extends State<TaskManagementScreen>
       setState(() {
         _selectedDate = picked;
       });
-      // Tarih değiştiğinde sadece tamamlanan görevleri yeniden yükle
-      await _loadCompletedTasksForDate(picked);
+      // Tarih değiştiğinde görevleri yeniden yükle
+      await _loadTasks();
     }
   }
 
@@ -302,23 +264,7 @@ class _TaskManagementScreenState extends State<TaskManagementScreen>
                               task: task,
                               onTaskCompleted: () async {
                                 try {
-                                  // Mevcut kullanıcının ID'sini al
-                                  final firebaseUser = FirebaseAuth.instance.currentUser;
-                                  if (firebaseUser == null) {
-                                    _scaffoldMessenger?.showSnackBar(
-                                      const SnackBar(content: Text('Kullanıcı bilgisi bulunamadı')),
-                                    );
-                                    return;
-                                  }
-                                  
-                                  // Görevi veritabanında tamamla
-                                  await _taskRepository.completeTask(
-                                    task.id,
-                                    [firebaseUser.uid], // Gerçek kullanıcı ID'si
-                                    null, // completedImageUrl
-                                  );
-                                  
-                                  // Widget hala mounted mı kontrol et
+                                  // CompleteTaskDialog zaten completeTask çağırıyor, burada sadece UI'ı güncelle
                                   if (!mounted) return;
                                   
                                   // Bekleyen görevlerden tamamlanan görevi kaldır
@@ -326,13 +272,13 @@ class _TaskManagementScreenState extends State<TaskManagementScreen>
                                     _pendingTasks.removeWhere((t) => t.id == task.id);
                                   });
                                   
-                                  // Bugün tamamlanan görevleri yenile
-                                  await _loadTodayCompletedTasks();
+                                  // Tamamlanan görevleri yenile
+                                  final completedTasksHistory = await _taskRepository.getTaskCompletionHistoryForDate(_selectedDate);
                                   
                                   if (mounted) {
-                                    _scaffoldMessenger?.showSnackBar(
-                                      const SnackBar(content: Text('Görev tamamlandı')),
-                                    );
+                                    setState(() {
+                                      _completedTasksHistory = completedTasksHistory;
+                                    });
                                   }
                                 } catch (e) {
                                   if (!mounted) return;
@@ -441,7 +387,7 @@ class _TaskManagementScreenState extends State<TaskManagementScreen>
                     setState(() {
                       _selectedDate = today;
                     });
-                    _loadTodayCompletedTasks();
+                    _loadTasks();
                   }
                 },
                 child: const Text(
@@ -456,7 +402,7 @@ class _TaskManagementScreenState extends State<TaskManagementScreen>
         Expanded(
           child: _isLoading
               ? const Center(child: CircularProgressIndicator())
-              : _completedTasks.isEmpty
+              : _completedTasksHistory.isEmpty
                   ? Center(
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
@@ -488,18 +434,16 @@ class _TaskManagementScreenState extends State<TaskManagementScreen>
                     )
                   : RefreshIndicator(
                       onRefresh: () async {
-                        await _loadCompletedTasksForDate(_selectedDate);
+                        await _loadTasks();
                       },
                       child: ListView.builder(
                         padding: const EdgeInsets.all(16),
-                        itemCount: _completedTasks.length,
+                        itemCount: _completedTasksHistory.length,
                         itemBuilder: (context, index) {
-                          final task = _completedTasks[index];
+                          final history = _completedTasksHistory[index];
                           return Padding(
                             padding: const EdgeInsets.only(bottom: 12),
-                            child: CompletedTaskCard(
-                              task: task,
-                            ),
+                            child: CompletedTaskHistoryCard(history: history),
                           );
                         },
                       ),

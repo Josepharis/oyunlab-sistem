@@ -1947,14 +1947,43 @@ class _MenuManagementScreenState extends State<MenuManagementScreen>
 
   // Grid görünümü
   Widget buildGridView(List<ProductItem> products) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    
+    // Responsive grid settings
+    int crossAxisCount;
+    double childAspectRatio;
+    double spacing;
+    
+    if (screenWidth < 360) {
+      // Very small screens
+      crossAxisCount = 1;
+      childAspectRatio = 1.2;
+      spacing = 12;
+    } else if (screenWidth < 600) {
+      // Small to medium screens
+      crossAxisCount = 2;
+      childAspectRatio = 0.75; // Increased from 0.68 to prevent overflow
+      spacing = 16;
+    } else if (screenWidth < 900) {
+      // Tablets
+      crossAxisCount = 3;
+      childAspectRatio = 0.8;
+      spacing = 20;
+    } else {
+      // Large screens
+      crossAxisCount = 4;
+      childAspectRatio = 0.85;
+      spacing = 24;
+    }
+    
     return GridView.builder(
       controller: _scrollController,
       physics: const BouncingScrollPhysics(),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        childAspectRatio: 0.68, // 0.75'ten 0.68'e düşürüldü - daha uzun kartlar
-        crossAxisSpacing: 16,
-        mainAxisSpacing: 16,
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: crossAxisCount,
+        childAspectRatio: childAspectRatio,
+        crossAxisSpacing: spacing,
+        mainAxisSpacing: spacing,
       ),
       itemCount: products.length,
       itemBuilder: (context, index) {
@@ -1978,6 +2007,10 @@ class _MenuManagementScreenState extends State<MenuManagementScreen>
 
   // Ürün Kartı - Grid görünümü için
   Widget buildProductCard(ProductItem product) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isSmallScreen = screenWidth < 400;
+    final isVerySmallScreen = screenWidth < 360;
+    
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
@@ -1997,10 +2030,10 @@ class _MenuManagementScreenState extends State<MenuManagementScreen>
         clipBehavior: Clip.antiAlias,
         child: InkWell(
           onTap: () => _showAddProductDialog(product.category, product),
-                        child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
               // Ürün görseli
               Hero(
                 tag: 'product_${product.name}',
@@ -2095,9 +2128,9 @@ class _MenuManagementScreenState extends State<MenuManagementScreen>
               ),
 
               // Ürün bilgileri
-              Expanded(
+              Flexible(
                 child: Padding(
-                  padding: const EdgeInsets.all(12),
+                  padding: EdgeInsets.all(isVerySmallScreen ? 8 : 12),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -2105,10 +2138,10 @@ class _MenuManagementScreenState extends State<MenuManagementScreen>
                       // Ürün adı
                       Text(
                         product.name,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontWeight: FontWeight.bold,
-                          fontSize: 14,
-                          color: Color(0xFF303030),
+                          fontSize: isVerySmallScreen ? 12 : (isSmallScreen ? 13 : 14),
+                          color: const Color(0xFF303030),
                         ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
@@ -2116,14 +2149,14 @@ class _MenuManagementScreenState extends State<MenuManagementScreen>
 
                       // Ürün açıklaması
                       if (product.description != null) ...[
-                        const SizedBox(height: 4),
+                        SizedBox(height: isVerySmallScreen ? 2 : 4),
                         Text(
                           product.description!,
                           style: TextStyle(
-                            fontSize: 12,
+                            fontSize: isVerySmallScreen ? 10 : (isSmallScreen ? 11 : 12),
                             color: Colors.grey.shade600,
                           ),
-                          maxLines: 3, // 2'den 3'e çıkarıldı
+                          maxLines: isVerySmallScreen ? 2 : 3,
                           overflow: TextOverflow.ellipsis,
                         ),
                       ],
@@ -2141,16 +2174,16 @@ class _MenuManagementScreenState extends State<MenuManagementScreen>
                                 Text(
                                   'Fiyat',
                                   style: TextStyle(
-                                    fontSize: 10,
+                                    fontSize: isVerySmallScreen ? 8 : 10,
                                     color: Colors.grey.shade600,
                                     fontWeight: FontWeight.w500,
                                   ),
                                 ),
-                                const SizedBox(height: 2),
+                                SizedBox(height: isVerySmallScreen ? 1 : 2),
                                 Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 8,
-                                    vertical: 4,
+                                  padding: EdgeInsets.symmetric(
+                                    horizontal: isVerySmallScreen ? 6 : 8,
+                                    vertical: isVerySmallScreen ? 3 : 4,
                                   ),
                                   decoration: BoxDecoration(
                                     color: Colors.green.shade50,
@@ -2159,7 +2192,7 @@ class _MenuManagementScreenState extends State<MenuManagementScreen>
                                   child: Text(
                                     '${product.price.toStringAsFixed(2)} ₺',
                                     style: TextStyle(
-                                      fontSize: 14,
+                                      fontSize: isVerySmallScreen ? 12 : (isSmallScreen ? 13 : 14),
                                       fontWeight: FontWeight.bold,
                                       color: Colors.green.shade700,
                                     ),
@@ -2169,7 +2202,7 @@ class _MenuManagementScreenState extends State<MenuManagementScreen>
                               ],
                             ),
                           ),
-                          const SizedBox(width: 8),
+                          SizedBox(width: isVerySmallScreen ? 6 : 8),
                           // Stok
                           Column(
                             mainAxisSize: MainAxisSize.min,
@@ -2177,16 +2210,16 @@ class _MenuManagementScreenState extends State<MenuManagementScreen>
                               Text(
                                 'Stok',
                                 style: TextStyle(
-                                  fontSize: 10,
+                                  fontSize: isVerySmallScreen ? 8 : 10,
                                   color: Colors.grey.shade600,
                                   fontWeight: FontWeight.w500,
                                 ),
                               ),
-                              const SizedBox(height: 2),
+                              SizedBox(height: isVerySmallScreen ? 1 : 2),
                               Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 4,
+                                padding: EdgeInsets.symmetric(
+                                  horizontal: isVerySmallScreen ? 6 : 8,
+                                  vertical: isVerySmallScreen ? 3 : 4,
                                 ),
                                 decoration: BoxDecoration(
                                   color: product.stock > 0 ? Colors.blue.shade50 : Colors.red.shade50,
@@ -2195,7 +2228,7 @@ class _MenuManagementScreenState extends State<MenuManagementScreen>
                                 child: Text(
                                   '${product.stock}',
                                   style: TextStyle(
-                                    fontSize: 12,
+                                    fontSize: isVerySmallScreen ? 10 : (isSmallScreen ? 11 : 12),
                                     fontWeight: FontWeight.bold,
                                     color: product.stock > 0 ? Colors.blue.shade700 : Colors.red.shade700,
                                   ),

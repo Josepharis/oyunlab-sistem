@@ -866,7 +866,7 @@ class _TableOrderScreenState extends State<TableOrderScreen>
       backgroundColor: AppTheme.backgroundColor,
       body: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(4, 20, 4, 0),
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -1010,7 +1010,7 @@ class _TableOrderScreenState extends State<TableOrderScreen>
 
               // Arama çubuğu
               Container(
-                padding: const EdgeInsets.all(8),
+                padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
                   color: Colors.white,
                   boxShadow: [
@@ -1065,51 +1065,56 @@ class _TableOrderScreenState extends State<TableOrderScreen>
 
               // Oyuncak Satış Bölümü
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
                   color: Colors.white,
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(12),
                   boxShadow: [
                     BoxShadow(
                       color: Colors.black.withOpacity(0.05),
-                      blurRadius: 3,
-                      offset: const Offset(0, 1),
+                      blurRadius: 5,
+                      offset: const Offset(0, 2),
                     ),
                   ],
                 ),
-                child: Row(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(
-                      Icons.toys_rounded,
-                      color: AppTheme.accentColor,
-                      size: 16,
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      'Oyuncak Satışı',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        color: AppTheme.primaryTextColor,
-                      ),
-                    ),
-                    const Spacer(),
-                    ElevatedButton.icon(
-                      onPressed: _showToySearchDialog,
-                      icon: const Icon(Icons.search, size: 14),
-                      label: const Text('Oyuncak Sat'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppTheme.accentColor,
-                        foregroundColor: Colors.white,
-                        elevation: 0,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 6,
-                          vertical: 2,
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.toys_rounded,
+                          color: AppTheme.accentColor,
+                          size: 20,
                         ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(4),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Oyuncak Satışı',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: AppTheme.primaryTextColor,
+                          ),
                         ),
-                      ),
+                        const SizedBox(width: 12),
+                        ElevatedButton.icon(
+                          onPressed: _showToySearchDialog,
+                          icon: const Icon(Icons.search, size: 16),
+                          label: const Text('Oyuncak Sat'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppTheme.accentColor,
+                            foregroundColor: Colors.white,
+                            elevation: 0,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 8,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
@@ -1117,7 +1122,7 @@ class _TableOrderScreenState extends State<TableOrderScreen>
 
               // Sipariş sayısı
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 child: Row(
                   children: [
                     Icon(
@@ -1215,12 +1220,12 @@ class _TableOrderScreenState extends State<TableOrderScreen>
   Widget _buildTablesGrid(List<TableOrder> tables) {
     return GridView.builder(
       key: ValueKey('tables_grid_${tables.length}'), // TableOrder için uygun key
-      padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 8),
+      padding: const EdgeInsets.all(16),
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 2, // 2x2 grid
-        childAspectRatio: 1.1, // kart boyut oranı - daha geniş kartlar
-        crossAxisSpacing: 1,
-        mainAxisSpacing: 1,
+        childAspectRatio: 0.85, // kart boyut oranı
+        crossAxisSpacing: 12,
+        mainAxisSpacing: 12,
       ),
       itemCount: tables.length,
       itemBuilder: (context, index) {
@@ -1260,7 +1265,7 @@ class _TableOrderScreenState extends State<TableOrderScreen>
           children: [
             // Üst kısım - Masa no ve isim
             Container(
-              padding: const EdgeInsets.all(3),
+              padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
                 color: accentColor.withOpacity(0.1),
                 borderRadius: const BorderRadius.vertical(
@@ -1288,7 +1293,7 @@ class _TableOrderScreenState extends State<TableOrderScreen>
                       ),
                     ),
                   ),
-                  const SizedBox(width: 6),
+                  const SizedBox(width: 10),
 
                   // Müşteri ismi ve çocuk ismi
                   Expanded(
@@ -1345,36 +1350,86 @@ class _TableOrderScreenState extends State<TableOrderScreen>
               ),
             ),
 
-            // Orta kısım - Sipariş sayısı
+            // Orta kısım - Sipariş bilgileri
             Expanded(
               child: Padding(
-                padding: const EdgeInsets.all(3),
+                padding: const EdgeInsets.all(12),
                 child: hasOrders
-                    ? Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              Icons.receipt_long,
-                              size: 32,
-                              color: hasActiveOrders
-                                  ? Colors.green.shade600
-                                  : Colors.grey.shade600,
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              '${table.orders.length} sipariş',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
+                    ? Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Sipariş sayısı
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.receipt_long,
+                                size: 14,
                                 color: hasActiveOrders
                                     ? Colors.green.shade600
                                     : Colors.grey.shade600,
                               ),
-                              textAlign: TextAlign.center,
+                              const SizedBox(width: 6),
+                              Text(
+                                '${table.orders.length} sipariş',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w500,
+                                  color: hasActiveOrders
+                                      ? Colors.green.shade600
+                                      : Colors.grey.shade600,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+
+                          // Son 2 sipariş
+                          Expanded(
+                            child: SingleChildScrollView(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: table.orders.take(3).map((order) {
+                                  return Padding(
+                                    padding: const EdgeInsets.only(
+                                      bottom: 6,
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Container(
+                                          width: 6,
+                                          height: 6,
+                                          decoration: BoxDecoration(
+                                            color: order.isCompleted
+                                                ? Colors.grey
+                                                : Colors.green,
+                                            shape: BoxShape.circle,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 6),
+                                        Expanded(
+                                          child: Text(
+                                            '${order.quantity}x ${order.productName}',
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              color: order.isCompleted
+                                                  ? Colors.grey
+                                                  : Colors.black87,
+                                              decoration: order.isCompleted
+                                                  ? TextDecoration.lineThrough
+                                                  : null,
+                                            ),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                }).toList(),
+                              ),
                             ),
-                          ],
-                        ),
+                          ),
+                        ],
                       )
                     : Center(
                         child: Column(
@@ -1382,16 +1437,15 @@ class _TableOrderScreenState extends State<TableOrderScreen>
                           children: [
                             Icon(
                               Icons.room_service_outlined,
-                              size: 32,
+                              size: 28,
                               color: Colors.grey.shade400,
                             ),
-                            const SizedBox(height: 4),
+                            const SizedBox(height: 8),
                             Text(
                               'Henüz sipariş yok',
                               style: TextStyle(
-                                fontSize: 14,
+                                fontSize: 13,
                                 color: Colors.grey.shade500,
-                                fontWeight: FontWeight.w500,
                               ),
                               textAlign: TextAlign.center,
                             ),
@@ -1403,7 +1457,7 @@ class _TableOrderScreenState extends State<TableOrderScreen>
 
             // Alt kısım - Toplam tutar ve Button
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 2),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               decoration: BoxDecoration(
                 color: Colors.grey.shade50,
                 borderRadius: const BorderRadius.vertical(
@@ -3256,12 +3310,7 @@ class _ProductSelectionSheetState extends State<ProductSelectionSheet>
             children: [
               // Başlık ve Kapat buton
               Container(
-                padding: EdgeInsets.fromLTRB(
-                  MediaQuery.of(context).size.width < 360 ? 16 : 20, 
-                  16, 
-                  MediaQuery.of(context).size.width < 360 ? 16 : 20, 
-                  8
-                ),
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
                 decoration: BoxDecoration(
                   color: Colors.white,
                   boxShadow: [
@@ -3280,7 +3329,7 @@ class _ProductSelectionSheetState extends State<ProductSelectionSheet>
                         Text(
                           'Sipariş Ekle',
                           style: TextStyle(
-                            fontSize: MediaQuery.of(context).size.width < 360 ? 16 : 18,
+                            fontSize: 18,
                             fontWeight: FontWeight.bold,
                             color: AppTheme.primaryColor,
                           ),
@@ -3308,7 +3357,7 @@ class _ProductSelectionSheetState extends State<ProductSelectionSheet>
                     const SizedBox(height: 8),
                     // Arama
                     Container(
-                      height: MediaQuery.of(context).size.width < 360 ? 40 : 45,
+                      height: 45,
                       decoration: BoxDecoration(
                         color: Colors.grey.shade100,
                         borderRadius: BorderRadius.circular(12),
@@ -3324,20 +3373,19 @@ class _ProductSelectionSheetState extends State<ProductSelectionSheet>
                           prefixIcon: Icon(
                             Icons.search_rounded,
                             color: Colors.grey.shade500,
-                            size: MediaQuery.of(context).size.width < 360 ? 20 : 24,
                           ),
                           hintText: 'Ürün ara...',
                           hintStyle: TextStyle(
                             color: Colors.grey.shade400,
-                            fontSize: MediaQuery.of(context).size.width < 360 ? 12 : 14,
+                            fontSize: 14,
                           ),
                           border: InputBorder.none,
-                          contentPadding: EdgeInsets.symmetric(
-                            horizontal: MediaQuery.of(context).size.width < 360 ? 12 : 16,
-                            vertical: MediaQuery.of(context).size.width < 360 ? 10 : 12,
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 12,
                           ),
                         ),
-                        style: TextStyle(fontSize: MediaQuery.of(context).size.width < 360 ? 12 : 14),
+                        style: const TextStyle(fontSize: 14),
                       ),
                     ),
                   ],
@@ -3395,11 +3443,6 @@ class _ProductSelectionSheetState extends State<ProductSelectionSheet>
   Widget _buildProductCard(ProductItem product) {
     final screenWidth = MediaQuery.of(context).size.width;
     
-    // Responsive sizing based on screen size
-    final isSmallScreen = screenWidth < 400;
-    final isVerySmallScreen = screenWidth < 360;
-    final isExtraSmallScreen = screenWidth < 320;
-    
     return InkWell(
       key: ValueKey('product_${product.name}_${product.category}'), // Benzersiz key ekle
       onTap: () {
@@ -3408,7 +3451,6 @@ class _ProductSelectionSheetState extends State<ProductSelectionSheet>
       },
       borderRadius: BorderRadius.circular(16),
       child: Container(
-        height: isExtraSmallScreen ? 420 : (isVerySmallScreen ? 440 : (isSmallScreen ? 460 : 480)), // 6.7 piksel taşmayı tamamen önlemek için daha büyük artış
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(16),
@@ -3438,7 +3480,7 @@ class _ProductSelectionSheetState extends State<ProductSelectionSheet>
                     topRight: Radius.circular(16),
                   ),
                   child: Container(
-                    height: isExtraSmallScreen ? 60 : (isVerySmallScreen ? 70 : (isSmallScreen ? 80 : 90)), // Responsive height
+                    height: 90, // 100'den 90'a düşürüldü
                     width: double.infinity,
                     color: Colors.grey.shade50,
                     child: product.imageUrl != null
@@ -3448,7 +3490,7 @@ class _ProductSelectionSheetState extends State<ProductSelectionSheet>
                             loadingBuilder: (context, child, loadingProgress) {
                               if (loadingProgress == null) return child;
                               return Container(
-                                height: isExtraSmallScreen ? 60 : (isVerySmallScreen ? 70 : (isSmallScreen ? 80 : 90)),
+                                height: 90,
                                 width: double.infinity,
                                 color: Colors.grey.shade100,
                                 child: Center(
@@ -3471,7 +3513,7 @@ class _ProductSelectionSheetState extends State<ProductSelectionSheet>
                 // Stok yoksa overlay
                 if (product.stock <= 0)
                   Container(
-                    height: isExtraSmallScreen ? 60 : (isVerySmallScreen ? 70 : (isSmallScreen ? 80 : 90)), // Responsive height
+                    height: 90, // 100'den 90'a düşürüldü
                     width: double.infinity,
                     decoration: BoxDecoration(
                       color: Colors.red.shade600.withOpacity(0.9),
@@ -3492,14 +3534,11 @@ class _ProductSelectionSheetState extends State<ProductSelectionSheet>
                         ),
                         // Stok yok yazısı
                         Positioned(
-                          bottom: isVerySmallScreen ? 4 : 6,
-                          left: isVerySmallScreen ? 4 : 6,
-                          right: isVerySmallScreen ? 4 : 6,
+                          bottom: 6, // 8'den 6'ya düşürüldü
+                          left: 6, // 8'den 6'ya düşürüldü
+                          right: 6, // 8'den 6'ya düşürüldü
                           child: Container(
-                            padding: EdgeInsets.symmetric(
-                              horizontal: isVerySmallScreen ? 6 : 8, 
-                              vertical: isVerySmallScreen ? 3 : 4
-                            ),
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                             decoration: BoxDecoration(
                               color: Colors.white.withOpacity(0.9),
                               borderRadius: BorderRadius.circular(8),
@@ -3509,7 +3548,7 @@ class _ProductSelectionSheetState extends State<ProductSelectionSheet>
                               textAlign: TextAlign.center,
                               style: TextStyle(
                                 color: Colors.red.shade700,
-                                fontSize: isVerySmallScreen ? 8 : 10,
+                                fontSize: 10,
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
@@ -3521,13 +3560,10 @@ class _ProductSelectionSheetState extends State<ProductSelectionSheet>
                 
                 // Stok etiketi
                 Positioned(
-                  top: isVerySmallScreen ? 4 : 6,
-                  right: isVerySmallScreen ? 4 : 6,
+                  top: 6, // 8'den 6'ya düşürüldü
+                  right: 6, // 8'den 6'ya düşürüldü
                   child: Container(
-                    padding: EdgeInsets.symmetric(
-                      horizontal: isVerySmallScreen ? 6 : 8, 
-                      vertical: isVerySmallScreen ? 3 : 4
-                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
                       color: product.stock > 0 ? Colors.green.shade500 : Colors.red.shade500,
                       borderRadius: BorderRadius.circular(12),
@@ -3541,9 +3577,9 @@ class _ProductSelectionSheetState extends State<ProductSelectionSheet>
                     ),
                     child: Text(
                       product.stock > 0 ? '${product.stock}' : '0',
-                      style: TextStyle(
+                      style: const TextStyle(
                         color: Colors.white,
-                        fontSize: isVerySmallScreen ? 9 : 11,
+                        fontSize: 11,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
@@ -3556,21 +3592,20 @@ class _ProductSelectionSheetState extends State<ProductSelectionSheet>
             Expanded(
               child: Padding(
                 padding: EdgeInsets.fromLTRB(
-                  isExtraSmallScreen ? 12 : (isVerySmallScreen ? 14 : 16), 
-                  isExtraSmallScreen ? 12 : (isVerySmallScreen ? 14 : 16), 
-                  isExtraSmallScreen ? 12 : (isVerySmallScreen ? 14 : 16), 
-                  isExtraSmallScreen ? 8 : (isVerySmallScreen ? 10 : 12),
+                  12, 
+                  12, 
+                  12, 
+                  screenWidth < 360 ? 16 : 12, // Çok küçük ekranlar için daha fazla alt padding
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
                   children: [
                     // Ürün Adı
                     Text(
                       product.name,
-                      style: TextStyle(
+                      style: const TextStyle(
                         fontWeight: FontWeight.w600,
-                        fontSize: isExtraSmallScreen ? 11 : (isVerySmallScreen ? 12 : (isSmallScreen ? 13 : 14)),
+                        fontSize: 14,
                         color: Colors.black87,
                         height: 1.2,
                       ),
@@ -3578,82 +3613,82 @@ class _ProductSelectionSheetState extends State<ProductSelectionSheet>
                       overflow: TextOverflow.ellipsis,
                     ),
 
-                    SizedBox(height: isExtraSmallScreen ? 6 : (isVerySmallScreen ? 8 : 10)),
+                    const SizedBox(height: 8),
 
-                    // Fiyat - Responsive
+                    // Fiyat - Küçük ekranlar için daha büyük
                     Text(
                       '${product.price.toStringAsFixed(2)} ₺',
                       style: TextStyle(
                         fontWeight: FontWeight.bold,
-                        fontSize: isExtraSmallScreen ? 12 : (isVerySmallScreen ? 13 : (isSmallScreen ? 14 : 15)),
+                        fontSize: 16,
                         color: Colors.green.shade700,
                       ),
                     ),
 
-                    SizedBox(height: isExtraSmallScreen ? 6 : (isVerySmallScreen ? 8 : 10)),
+                    const SizedBox(height: 8),
 
-                    // Miktar Seçici - Responsive
+                    // Miktar Seçici - Küçük ekranlar için daha büyük ve responsive
                     if (product.stock > 0) ...[
                       Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          // Azalt Butonu - Responsive
+                          // Azalt Butonu - Daha büyük ve dokunma alanı geniş
                           GestureDetector(
                             onTap: () => _quickAddToTable(product, -1),
                             child: Container(
-                              width: isExtraSmallScreen ? 28 : (isVerySmallScreen ? 30 : (isSmallScreen ? 32 : 34)),
-                              height: isExtraSmallScreen ? 28 : (isVerySmallScreen ? 30 : (isSmallScreen ? 32 : 34)),
+                              width: 36, // 26'dan 36'ya çıkarıldı
+                              height: 36, // 26'dan 36'ya çıkarıldı
                               decoration: BoxDecoration(
                                 color: Colors.grey.shade100,
-                                borderRadius: BorderRadius.circular(6),
-                                border: Border.all(color: Colors.grey.shade300, width: 1.2),
+                                borderRadius: BorderRadius.circular(8), // 6'dan 8'e çıkarıldı
+                                border: Border.all(color: Colors.grey.shade300, width: 1.5),
                               ),
-                              child: Icon(
+                              child: const Icon(
                                 Icons.remove,
-                                size: isExtraSmallScreen ? 14 : (isVerySmallScreen ? 16 : (isSmallScreen ? 18 : 20)),
+                                size: 20, // 16'dan 20'ye çıkarıldı
                                 color: Colors.grey,
                               ),
                             ),
                           ),
                           
-                          SizedBox(width: isExtraSmallScreen ? 6 : (isVerySmallScreen ? 8 : (isSmallScreen ? 10 : 12))),
+                          const SizedBox(width: 12), // 6'dan 12'ye çıkarıldı
                           
-                          // Miktar Göstergesi - Responsive
+                          // Miktar Göstergesi - Daha büyük
                           Container(
-                            width: isExtraSmallScreen ? 36 : (isVerySmallScreen ? 40 : (isSmallScreen ? 44 : 48)),
-                            height: isExtraSmallScreen ? 28 : (isVerySmallScreen ? 30 : (isSmallScreen ? 32 : 34)),
+                            width: 50, // 30'dan 50'ye çıkarıldı
+                            height: 36, // 26'dan 36'ya çıkarıldı
                             decoration: BoxDecoration(
                               color: Colors.white,
-                              borderRadius: BorderRadius.circular(6),
-                              border: Border.all(color: Colors.grey.shade300, width: 1.2),
+                              borderRadius: BorderRadius.circular(8), // 6'dan 8'e çıkarıldı
+                              border: Border.all(color: Colors.grey.shade300, width: 1.5),
                             ),
                             child: Center(
                               child: Text(
                                 '${_getQuickAddQuantity(product)}',
-                                style: TextStyle(
+                                style: const TextStyle(
                                   fontWeight: FontWeight.bold,
-                                  fontSize: isExtraSmallScreen ? 12 : (isVerySmallScreen ? 14 : (isSmallScreen ? 16 : 18)),
+                                  fontSize: 16, // 12'den 16'ya çıkarıldı
                                 ),
                               ),
                             ),
                           ),
                           
-                          SizedBox(width: isExtraSmallScreen ? 6 : (isVerySmallScreen ? 8 : (isSmallScreen ? 10 : 12))),
+                          const SizedBox(width: 12), // 6'dan 12'ye çıkarıldı
                           
-                          // Artır Butonu - Responsive
+                          // Artır Butonu - Daha büyük ve dokunma alanı geniş
                           GestureDetector(
                             onTap: () => _quickAddToTable(product, 1),
                             child: Container(
-                              width: isExtraSmallScreen ? 28 : (isVerySmallScreen ? 30 : (isSmallScreen ? 32 : 34)),
-                              height: isExtraSmallScreen ? 28 : (isVerySmallScreen ? 30 : (isSmallScreen ? 32 : 34)),
+                              width: 36, // 26'dan 36'ya çıkarıldı
+                              height: 36, // 26'dan 36'ya çıkarıldı
                               decoration: BoxDecoration(
                                 color: Colors.grey.shade100,
-                                borderRadius: BorderRadius.circular(6),
-                                border: Border.all(color: Colors.grey.shade300, width: 1.2),
+                                borderRadius: BorderRadius.circular(8), // 6'dan 8'e çıkarıldı
+                                border: Border.all(color: Colors.grey.shade300, width: 1.5),
                               ),
-                              child: Icon(
+                              child: const Icon(
                                 Icons.add,
-                                size: isExtraSmallScreen ? 14 : (isVerySmallScreen ? 16 : (isSmallScreen ? 18 : 20)),
+                                size: 20, // 16'dan 20'ye çıkarıldı
                                 color: Colors.grey,
                               ),
                             ),
@@ -3664,11 +3699,11 @@ class _ProductSelectionSheetState extends State<ProductSelectionSheet>
 
                     const SizedBox(height: 12),
 
-                    // Ekle Butonu veya Stok Yok - Responsive
+                    // Ekle Butonu veya Stok Yok - Küçük ekranlar için daha büyük
                     if (product.stock > 0) ...[
                       Container(
                         width: double.infinity,
-                        height: isVerySmallScreen ? 32 : (isSmallScreen ? 36 : 40),
+                        height: 44, // 40'dan 44'e çıkarıldı
                         child: ElevatedButton(
                           onPressed: () => _addToTableFromCard(product),
                           style: ElevatedButton.styleFrom(
@@ -3679,10 +3714,10 @@ class _ProductSelectionSheetState extends State<ProductSelectionSheet>
                               borderRadius: BorderRadius.circular(8),
                             ),
                           ),
-                          child: Text(
+                          child: const Text(
                             'Masaya Ekle',
                             style: TextStyle(
-                              fontSize: isVerySmallScreen ? 11 : (isSmallScreen ? 12 : 13),
+                              fontSize: 14, // 13'ten 14'e çıkarıldı
                               fontWeight: FontWeight.w600,
                             ),
                           ),
@@ -3691,18 +3726,18 @@ class _ProductSelectionSheetState extends State<ProductSelectionSheet>
                     ] else ...[
                       Container(
                         width: double.infinity,
-                        height: isVerySmallScreen ? 32 : (isSmallScreen ? 36 : 40),
+                        height: 44, // 40'dan 44'e çıkarıldı
                         decoration: BoxDecoration(
                           color: Colors.red.shade50,
                           borderRadius: BorderRadius.circular(8),
                           border: Border.all(color: Colors.red.shade200),
                         ),
-                        child: Center(
+                        child: const Center(
                           child: Text(
                             'Stok Yok',
                             style: TextStyle(
                               color: Colors.red,
-                              fontSize: isVerySmallScreen ? 11 : (isSmallScreen ? 12 : 13),
+                              fontSize: 14, // 13'ten 14'e çıkarıldı
                               fontWeight: FontWeight.w500,
                             ),
                           ),
@@ -3916,8 +3951,9 @@ class _ProductSelectionSheetState extends State<ProductSelectionSheet>
 
     // Ekran boyutuna göre responsive grid
     final screenWidth = MediaQuery.of(context).size.width;
+    final screenHeight = MediaQuery.of(context).size.height;
     
-    // Ekran boyutuna göre grid ayarları - Overflow'u önlemek için daha esnek
+    // Ekran boyutuna göre grid ayarları - Buton için daha fazla alan
     int crossAxisCount;
     double childAspectRatio;
     double spacing;
@@ -3925,27 +3961,27 @@ class _ProductSelectionSheetState extends State<ProductSelectionSheet>
     if (screenWidth < 360) {
       // Çok küçük ekranlar (eski telefonlar)
       crossAxisCount = 1;
-      childAspectRatio = 0.8; // Çok daha yüksek kartlar
+      childAspectRatio = 1.2; // Tek sütun, daha yüksek kartlar
       spacing = 8;
     } else if (screenWidth < 400) {
       // Küçük ekranlar (telefon)
       crossAxisCount = 2;
-      childAspectRatio = 0.7; // Çok daha yüksek kartlar
+      childAspectRatio = 0.9; // Daha yüksek kartlar
       spacing = 10;
     } else if (screenWidth < 600) {
       // Orta ekranlar (büyük telefon)
       crossAxisCount = 2;
-      childAspectRatio = 0.75; // Çok daha yüksek kartlar
+      childAspectRatio = 0.95; // Daha yüksek kartlar
       spacing = 12;
     } else if (screenWidth < 900) {
       // Tablet
       crossAxisCount = 3;
-      childAspectRatio = 0.8; // Çok daha yüksek kartlar
+      childAspectRatio = 1.0; // Kare kartlar
       spacing = 16;
     } else {
       // Büyük tablet/desktop
       crossAxisCount = 4;
-      childAspectRatio = 0.85; // Çok daha yüksek kartlar
+      childAspectRatio = 1.05; // Hafif yüksek kartlar
       spacing = 20;
     }
 

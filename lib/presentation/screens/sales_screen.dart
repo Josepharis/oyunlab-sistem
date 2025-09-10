@@ -2518,7 +2518,10 @@ class _SalesScreenState extends State<SalesScreen> {
       }
       return 'Tamamlandı';
     } else {
-      // Sales screen için sadece tamamlanma durumunu kontrol et
+      // Süre bitmişse "Süresi Bitti", değilse "Aktif"
+      if (remainingTime.inSeconds <= 0) {
+        return 'Süresi Bitti';
+      }
       return 'Aktif';
     }
   }
@@ -2531,7 +2534,10 @@ class _SalesScreenState extends State<SalesScreen> {
       }
       return Colors.green.shade700;
     } else {
-      // Sales screen için sadece tamamlanma durumunu kontrol et
+      // Süre bitmişse kırmızı, değilse mavi
+      if (remainingTime.inSeconds <= 0) {
+        return Colors.red.shade700;
+      }
       return Colors.blue.shade700;
     }
   }
