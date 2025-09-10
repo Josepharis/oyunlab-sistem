@@ -1526,8 +1526,10 @@ class _HomeScreenState extends State<HomeScreen>
     final durationOptions = businessSettings?.durationPrices.where((dp) => dp.isActive).toList() ?? 
         BusinessSettings.getDefaultDurationPrices(BusinessCategory.oyunAlani);
     
+    // Başlangıç değeri: varsayılan süre seçeneği
     int additionalMinutes = durationOptions.isNotEmpty ? durationOptions.first.duration : 30;
     double selectedPrice = durationOptions.isNotEmpty ? durationOptions.first.price : 1.0;
+    String selectedPaymentMethod = 'Nakit'; // Varsayılan ödeme yöntemi
 
     showDialog(
       context: context,
@@ -1547,101 +1549,117 @@ class _HomeScreenState extends State<HomeScreen>
                     ),
                   ),
                   const SizedBox(height: 16),
-                  Text(
-                    '$additionalMinutes dakika',
-                    style: const TextStyle(
-                      fontSize: 28,
-                      fontWeight: FontWeight.bold,
-                      color: AppTheme.primaryColor,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
                   Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      IconButton(
-                        onPressed: () {
-                          setState(() {
-                            if (additionalMinutes > 5) {
-                              additionalMinutes -= 5;
-                            }
-                          });
-                        },
-                        icon: const Icon(Icons.remove_circle_outline),
-                        color: AppTheme.primaryColor,
-                      ),
-                      Slider(
-                        value: additionalMinutes.toDouble(),
-                        min: 5,
-                        max: 180,
-                        divisions: 35,
-                        activeColor: AppTheme.primaryColor,
-                        inactiveColor: AppTheme.primaryColor.withOpacity(0.2),
-                        onChanged: (value) {
-                          setState(() {
-                            additionalMinutes = value.round();
-                          });
-                        },
-                      ),
-                      IconButton(
-                        onPressed: () {
-                          setState(() {
-                            if (additionalMinutes < 180) {
-                              additionalMinutes += 5;
-                            }
-                          });
-                        },
-                        icon: const Icon(Icons.add_circle_outline),
-                        color: AppTheme.primaryColor,
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    alignment: WrapAlignment.center,
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                     children: durationOptions
                         .map(
-                          (durationPrice) => ElevatedButton(
-                            onPressed: () {
-                              setState(() {
-                                additionalMinutes = durationPrice.duration;
-                                selectedPrice = durationPrice.price;
-                              });
-                            },
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor:
-                                  additionalMinutes == durationPrice.duration
-                                      ? AppTheme.primaryColor
-                                      : AppTheme.primaryColor.withOpacity(0.1),
-                              foregroundColor:
-                                  additionalMinutes == durationPrice.duration
-                                      ? Colors.white
-                                      : AppTheme.primaryColor,
-                              elevation: 0,
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 8,
-                              ),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                            ),
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text('${durationPrice.duration} dk'),
-                                if (durationPrice.price > 0)
-                                  Text(
-                                    '${durationPrice.price.toStringAsFixed(0)}₺',
-                                    style: const TextStyle(fontSize: 10),
+                          (durationPrice) => Expanded(
+                            child: Container(
+                              margin: const EdgeInsets.symmetric(horizontal: 4),
+                              child: ElevatedButton(
+                                onPressed: () {
+                                  setState(() {
+                                    additionalMinutes = durationPrice.duration;
+                                    selectedPrice = durationPrice.price;
+                                  });
+                                },
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor:
+                                      additionalMinutes == durationPrice.duration
+                                          ? AppTheme.primaryColor
+                                          : AppTheme.primaryColor.withOpacity(0.1),
+                                  foregroundColor:
+                                      additionalMinutes == durationPrice.duration
+                                          ? Colors.white
+                                          : AppTheme.primaryColor,
+                                  elevation: 2,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 12,
                                   ),
-                              ],
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                ),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      '${durationPrice.duration} dk',
+                                      style: const TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    if (durationPrice.price > 0)
+                                      Text(
+                                        '${durationPrice.price.toStringAsFixed(0)}₺',
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              ),
                             ),
                           ),
                         )
                         .toList(),
+                  ),
+                  const SizedBox(height: 16),
+                  // Ödeme Yöntemi Seçimi
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.grey.shade300),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Ödeme Yöntemi',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: AppTheme.primaryColor,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _buildPaymentMethodButton(
+                                label: 'Nakit',
+                                icon: Icons.money,
+                                isSelected: selectedPaymentMethod == 'Nakit',
+                                onTap: () {
+                                  setState(() {
+                                    selectedPaymentMethod = 'Nakit';
+                                  });
+                                },
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: _buildPaymentMethodButton(
+                                label: 'Kart',
+                                icon: Icons.credit_card,
+                                isSelected: selectedPaymentMethod == 'Kart',
+                                onTap: () {
+                                  setState(() {
+                                    selectedPaymentMethod = 'Kart';
+                                  });
+                                },
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
                 ],
               ),
@@ -1676,7 +1694,7 @@ class _HomeScreenState extends State<HomeScreen>
                     }
 
                     // Süre satın alma işlemini satışlara kaydet
-                    await _createTimePurchaseSaleRecord(customer, additionalMinutes, siblingCount, selectedPrice);
+                    await _createTimePurchaseSaleRecord(customer, additionalMinutes, siblingCount, selectedPrice, selectedPaymentMethod);
 
                     Navigator.pop(context);
 
@@ -2945,7 +2963,7 @@ class _HomeScreenState extends State<HomeScreen>
 
 
   // Süre satın alma satış kaydı oluştur
-  Future<void> _createTimePurchaseSaleRecord(Customer customer, int additionalMinutes, int siblingCount, double pricePerMinute) async {
+  Future<void> _createTimePurchaseSaleRecord(Customer customer, int additionalMinutes, int siblingCount, double pricePerMinute, String paymentMethod) async {
     try {
       final firebaseUser = FirebaseAuth.instance.currentUser;
       if (firebaseUser == null) return;
@@ -2964,7 +2982,7 @@ class _HomeScreenState extends State<HomeScreen>
         customerPhone: customer.phoneNumber,
         customerEmail: null,
         items: ['Süre Satın Alma - ${additionalMinutes} dakika'],
-        paymentMethod: 'Nakit',
+        paymentMethod: paymentMethod,
         status: 'Tamamlandı',
         createdAt: DateTime.now(),
         updatedAt: DateTime.now(),
@@ -3080,5 +3098,47 @@ class _HomeScreenState extends State<HomeScreen>
           customer.parentName.toLowerCase().contains(query) ||
           customer.phoneNumber.contains(query);
     }).toList();
+  }
+
+  // Ödeme yöntemi butonu
+  Widget _buildPaymentMethodButton({
+    required String label,
+    required IconData icon,
+    required bool isSelected,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        height: 36,
+        decoration: BoxDecoration(
+          color: isSelected ? AppTheme.primaryColor : Colors.white,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: isSelected ? AppTheme.primaryColor : Colors.grey.shade300,
+            width: 1,
+          ),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              icon,
+              color: isSelected ? Colors.white : AppTheme.primaryColor,
+              size: 16,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: isSelected ? Colors.white : AppTheme.primaryColor,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }

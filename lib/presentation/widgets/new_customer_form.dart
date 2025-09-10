@@ -750,6 +750,13 @@ class _NewCustomerFormState extends State<NewCustomerForm>
                         style: TextStyle(fontSize: isVerySmallScreen ? 12 : (isSmallScreen ? 14 : 16)),
                       ),
                     ),
+                    DropdownMenuItem(
+                      value: 'Doğum Günü',
+                      child: Text(
+                        'Doğum Günü',
+                        style: TextStyle(fontSize: isVerySmallScreen ? 12 : (isSmallScreen ? 14 : 16)),
+                      ),
+                    ),
                   ],
                   onChanged: (String? newValue) {
                     setState(() {
@@ -1775,8 +1782,8 @@ class _NewCustomerFormState extends State<NewCustomerForm>
                     },
                     child: Container(
                       padding: EdgeInsets.symmetric(
-                        horizontal: isVerySmallScreen ? 4 : (isSmallScreen ? 6 : 8),
-                        vertical: isVerySmallScreen ? 3 : (isSmallScreen ? 4 : 6),
+                        horizontal: isVerySmallScreen ? 5 : (isSmallScreen ? 7 : 9),
+                        vertical: isVerySmallScreen ? 3.5 : (isSmallScreen ? 5 : 6.5),
                       ),
                       decoration: BoxDecoration(
                         color: isSelected ? AppTheme.primaryColor : Colors.white,
@@ -1805,7 +1812,7 @@ class _NewCustomerFormState extends State<NewCustomerForm>
                           Text(
                             '${durationPrice.duration} dk',
                             style: TextStyle(
-                              fontSize: isVerySmallScreen ? 9 : (isSmallScreen ? 10 : 11),
+                              fontSize: isVerySmallScreen ? 10 : (isSmallScreen ? 11.5 : 13),
                               fontWeight: FontWeight.w600,
                               color: isSelected ? Colors.white : AppTheme.primaryColor,
                             ),
@@ -1815,7 +1822,7 @@ class _NewCustomerFormState extends State<NewCustomerForm>
                                 ? 'Ücretsiz'
                                 : '${discountedPrice.toStringAsFixed(2)} ₺',
                             style: TextStyle(
-                              fontSize: isVerySmallScreen ? 7 : (isSmallScreen ? 8 : 9),
+                              fontSize: isVerySmallScreen ? 8 : (isSmallScreen ? 9 : 10),
                               fontWeight: FontWeight.w500,
                               color: isSelected 
                                   ? Colors.white.withOpacity(0.8) 
