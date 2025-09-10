@@ -1775,12 +1775,12 @@ class _HomeScreenState extends State<HomeScreen>
 
             return AlertDialog(
               title: const Text('Kardeş Ekle'),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
                   // Kardeş sayısı seçici
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
+                  Column(
                     children: [
                       Text(
                         'Eklenecek kardeş sayısı:',
@@ -1788,14 +1788,16 @@ class _HomeScreenState extends State<HomeScreen>
                           fontSize: 14,
                           color: AppTheme.primaryColor,
                         ),
+                        textAlign: TextAlign.center,
                       ),
-                      const SizedBox(width: 8),
+                      const SizedBox(height: 8),
                       Container(
                         decoration: BoxDecoration(
                           color: AppTheme.primaryColor.withOpacity(0.1),
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Row(
+                          mainAxisSize: MainAxisSize.min,
                           children: [
                             IconButton(
                               icon: Icon(
@@ -1872,15 +1874,22 @@ class _HomeScreenState extends State<HomeScreen>
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            const Text(
-                              'Mevcut aktif çocuk sayısı:',
-                              style: TextStyle(fontSize: 13),
+                            Expanded(
+                              flex: 2,
+                              child: Text(
+                                'Mevcut aktif çocuk sayısı:',
+                                style: TextStyle(fontSize: 13),
+                              ),
                             ),
-                            Text(
-                              '$currentChildCount',
-                              style: const TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.bold,
+                            Expanded(
+                              flex: 1,
+                              child: Text(
+                                '$currentChildCount',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                                textAlign: TextAlign.end,
                               ),
                             ),
                           ],
@@ -1889,15 +1898,22 @@ class _HomeScreenState extends State<HomeScreen>
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            const Text(
-                              'Eklenecek çocuk sayısı:',
-                              style: TextStyle(fontSize: 14),
+                            Expanded(
+                              flex: 2,
+                              child: Text(
+                                'Eklenecek çocuk sayısı:',
+                                style: TextStyle(fontSize: 13),
+                              ),
                             ),
-                            Text(
-                              '$siblingCount',
-                              style: const TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.bold,
+                            Expanded(
+                              flex: 1,
+                              child: Text(
+                                '$siblingCount',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                                textAlign: TextAlign.end,
                               ),
                             ),
                           ],
@@ -1906,15 +1922,22 @@ class _HomeScreenState extends State<HomeScreen>
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            const Text(
-                              'Son durum çocuk sayısı:',
-                              style: TextStyle(fontSize: 14),
+                            Expanded(
+                              flex: 2,
+                              child: Text(
+                                'Son durum çocuk sayısı:',
+                                style: TextStyle(fontSize: 13),
+                              ),
                             ),
-                            Text(
-                              '$totalChildren',
-                              style: const TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.bold,
+                            Expanded(
+                              flex: 1,
+                              child: Text(
+                                '$totalChildren',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                                textAlign: TextAlign.end,
                               ),
                             ),
                           ],
@@ -1923,15 +1946,22 @@ class _HomeScreenState extends State<HomeScreen>
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            const Text(
-                              'Toplam kalan süre:',
-                              style: TextStyle(fontSize: 13),
+                            Expanded(
+                              flex: 2,
+                              child: Text(
+                                'Toplam kalan süre:',
+                                style: TextStyle(fontSize: 13),
+                              ),
                             ),
-                            Text(
-                              '${totalRemainingSeconds ~/ 60} dk ${totalRemainingSeconds % 60} sn',
-                              style: const TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.bold,
+                            Expanded(
+                              flex: 1,
+                              child: Text(
+                                '${totalRemainingSeconds ~/ 60} dk ${totalRemainingSeconds % 60} sn',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                                textAlign: TextAlign.end,
                               ),
                             ),
                           ],
@@ -1940,20 +1970,27 @@ class _HomeScreenState extends State<HomeScreen>
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            const Text(
-                              'Kişi başı düşecek süre:',
-                              style: TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.bold,
-                                color: AppTheme.primaryColor,
+                            Expanded(
+                              flex: 2,
+                              child: Text(
+                                'Kişi başı düşecek süre:',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppTheme.primaryColor,
+                                ),
                               ),
                             ),
-                            Text(
-                              '$perChildMinutes dk $perChildRemainingSeconds sn',
-                              style: const TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.bold,
-                                color: AppTheme.primaryColor,
+                            Expanded(
+                              flex: 1,
+                              child: Text(
+                                '$perChildMinutes dk $perChildRemainingSeconds sn',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppTheme.primaryColor,
+                                ),
+                                textAlign: TextAlign.end,
                               ),
                             ),
                           ],
@@ -1962,6 +1999,7 @@ class _HomeScreenState extends State<HomeScreen>
                     ),
                   ),
                 ],
+                ),
               ),
               actions: [
                 TextButton(
@@ -2090,12 +2128,12 @@ class _HomeScreenState extends State<HomeScreen>
 
             return AlertDialog(
               title: const Text('Kardeş Çıkar'),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
                   // Çıkarılacak kardeş sayısı seçici
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
+                  Column(
                     children: [
                       Text(
                         'Çıkarılacak kardeş sayısı:',
@@ -2103,14 +2141,16 @@ class _HomeScreenState extends State<HomeScreen>
                           fontSize: 14,
                           color: AppTheme.primaryColor,
                         ),
+                        textAlign: TextAlign.center,
                       ),
-                      const SizedBox(width: 8),
+                      const SizedBox(height: 8),
                       Container(
                         decoration: BoxDecoration(
                           color: AppTheme.primaryColor.withOpacity(0.1),
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Row(
+                          mainAxisSize: MainAxisSize.min,
                           children: [
                             IconButton(
                               icon: Icon(
@@ -2187,15 +2227,22 @@ class _HomeScreenState extends State<HomeScreen>
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            const Text(
-                              'Mevcut çocuk sayısı:',
-                              style: TextStyle(fontSize: 13),
+                            Expanded(
+                              flex: 2,
+                              child: Text(
+                                'Mevcut çocuk sayısı:',
+                                style: TextStyle(fontSize: 13),
+                              ),
                             ),
-                            Text(
-                              '$currentChildCount',
-                              style: const TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.bold,
+                            Expanded(
+                              flex: 1,
+                              child: Text(
+                                '$currentChildCount',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                                textAlign: TextAlign.end,
                               ),
                             ),
                           ],
@@ -2204,15 +2251,22 @@ class _HomeScreenState extends State<HomeScreen>
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            const Text(
-                              'Çıkarılacak çocuk sayısı:',
-                              style: TextStyle(fontSize: 13),
+                            Expanded(
+                              flex: 2,
+                              child: Text(
+                                'Çıkarılacak çocuk sayısı:',
+                                style: TextStyle(fontSize: 13),
+                              ),
                             ),
-                            Text(
-                              '$childrenToRemove',
-                              style: const TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.bold,
+                            Expanded(
+                              flex: 1,
+                              child: Text(
+                                '$childrenToRemove',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                                textAlign: TextAlign.end,
                               ),
                             ),
                           ],
@@ -2221,15 +2275,22 @@ class _HomeScreenState extends State<HomeScreen>
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            const Text(
-                              'Kalan çocuk sayısı:',
-                              style: TextStyle(fontSize: 13),
+                            Expanded(
+                              flex: 2,
+                              child: Text(
+                                'Kalan çocuk sayısı:',
+                                style: TextStyle(fontSize: 13),
+                              ),
                             ),
-                            Text(
-                              '$remainingChildren',
-                              style: const TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.bold,
+                            Expanded(
+                              flex: 1,
+                              child: Text(
+                                '$remainingChildren',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                                textAlign: TextAlign.end,
                               ),
                             ),
                           ],
@@ -2238,15 +2299,22 @@ class _HomeScreenState extends State<HomeScreen>
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            const Text(
-                              'Toplam kalan süre:',
-                              style: TextStyle(fontSize: 13),
+                            Expanded(
+                              flex: 2,
+                              child: Text(
+                                'Toplam kalan süre:',
+                                style: TextStyle(fontSize: 13),
+                              ),
                             ),
-                            Text(
-                              '${totalRemainingSeconds ~/ 60} dk ${totalRemainingSeconds % 60} sn',
-                              style: const TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.bold,
+                            Expanded(
+                              flex: 1,
+                              child: Text(
+                                '${totalRemainingSeconds ~/ 60} dk ${totalRemainingSeconds % 60} sn',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                                textAlign: TextAlign.end,
                               ),
                             ),
                           ],
@@ -2256,16 +2324,23 @@ class _HomeScreenState extends State<HomeScreen>
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              const Text(
-                                'Kalan çocuklara düşecek süre:',
-                                style: TextStyle(fontSize: 13),
+                              Expanded(
+                                flex: 2,
+                                child: Text(
+                                  'Kalan çocuklara düşecek süre:',
+                                  style: TextStyle(fontSize: 13),
+                                ),
                               ),
-                              Text(
-                                '$perChildMinutes dk $perChildRemainingSeconds sn',
-                                style: const TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.green,
+                              Expanded(
+                                flex: 1,
+                                child: Text(
+                                  '$perChildMinutes dk $perChildRemainingSeconds sn',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.green,
+                                  ),
+                                  textAlign: TextAlign.end,
                                 ),
                               ),
                             ],
@@ -2275,6 +2350,7 @@ class _HomeScreenState extends State<HomeScreen>
                     ),
                   ),
                 ],
+                ),
               ),
               actions: [
                 TextButton(

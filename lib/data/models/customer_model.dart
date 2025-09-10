@@ -131,7 +131,7 @@ class Customer {
     }
     
     final actualElapsed = totalElapsed - totalPausedSeconds;
-    final remaining = totalSeconds - (actualElapsed * childCount);
+    final remaining = totalSeconds - actualElapsed;
     return remaining > 0 ? remaining : 0;
   }
 
